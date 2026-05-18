@@ -1,0 +1,9 @@
+.superpowers/
+.worktrees/
+node_modules/
+dist/
+fixtures/*.mp4
+workspace/
+.DS_Store
+.env
+.env.local
