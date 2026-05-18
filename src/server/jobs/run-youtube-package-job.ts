@@ -12,6 +12,7 @@ import type { YoutubePackageCopy } from "../youtube/youtube-package-copy";
 import { selectBestFrame } from "../youtube/select-best-frame";
 import { preprocessFrame } from "../youtube/preprocess-frames";
 import { cropFaceRegion } from "../youtube/crop-face-region";
+import { selectIdentityPhoto } from "../youtube/select-identity-photo";
 import type { JobStore } from "./job-store";
 
 export type YoutubePackageProcessRunner = (
@@ -32,6 +33,7 @@ export type RunYoutubePackageJobDeps = {
   selectBestFrame?: typeof selectBestFrame;
   preprocessFrame?: typeof preprocessFrame;
   cropFaceRegion?: typeof cropFaceRegion;
+  selectIdentityPhoto?: typeof selectIdentityPhoto;
 };
 
 const CANDIDATE_COUNT = 6;
@@ -79,6 +81,10 @@ export async function runYoutubePackageJob(
     await writeCopyFiles(packageDir, copy);
 
     const sourcePath = await pickFrameSource(input.workspace, plan.source.path);
+    const identityPhotoPaths = await resolveIdentityPhotos(
+      getConfig().workspaceRoot,
+      input.workspace.root
+    );
     input.jobs.update(input.jobId, {
       status: "running",
       stage: "youtube_package_frames",
@@ -90,7 +96,8 @@ export async function runYoutubePackageJob(
       selectBestFrame: deps.selectBestFrame,
       preprocessFrame: deps.preprocessFrame,
       cropFaceRegion: deps.cropFaceRegion,
-    });
+      selectIdentityPhoto: deps.selectIdentityPhoto,
+    }, identityPhotoPaths, copy.title);
     await extractIdentityClips(plan, sourcePath, packageDir, processRunner);
 
     input.jobs.update(input.jobId, {
@@ -196,7 +203,9 @@ async function extractReferenceFrames(
   sourcePath: string,
   packageDir: string,
   processRunner: YoutubePackageProcessRunner,
-  deps: Pick<RunYoutubePackageJobDeps, "selectBestFrame" | "preprocessFrame" | "cropFaceRegion">
+  deps: Pick<RunYoutubePackageJobDeps, "selectBestFrame" | "preprocessFrame" | "cropFaceRegion" | "selectIdentityPhoto">,
+  identityPhotoPaths: string[],
+  videoTitle: string
 ) {
   const times = selectCandidateFrameTimes(plan);
   const segmentDuration = Number(
@@ -265,11 +274,19 @@ async function extractReferenceFrames(
     );
 
     if (refIndex === 0) {
-      // ref-01 = face reference: preprocess then crop to face region
-      const preprocessedPath = outputPath + ".pre.jpg";
-      await preprocessFn(candidate, preprocessedPath);
-      await cropFaceFn(preprocessedPath, outputPath);
-      await unlink(preprocessedPath).catch(() => undefined);
+      if (identityPhotoPaths.length > 0) {
+        // Identity photo library available: select best expression, skip face crop
+        const selectIdentityPhotoFn = deps.selectIdentityPhoto ?? selectIdentityPhoto;
+        const selectedIdx = await selectIdentityPhotoFn(identityPhotoPaths, videoTitle);
+        const identityPhoto = identityPhotoPaths[selectedIdx] ?? identityPhotoPaths[0]!;
+        await preprocessFn(identityPhoto, outputPath);
+      } else {
+        // No library: extract face from video frame (original behavior)
+        const preprocessedPath = outputPath + ".pre.jpg";
+        await preprocessFn(candidate, preprocessedPath);
+        await cropFaceFn(preprocessedPath, outputPath);
+        await unlink(preprocessedPath).catch(() => undefined);
+      }
     } else {
       // ref-02/03/04 = background references: preprocess only, keep full frame
       await preprocessFn(candidate, outputPath);
@@ -350,6 +367,36 @@ function deriveBreakingNewsCopy(copy: YoutubePackageCopy): YoutubePackageCopy {
       },
     ],
   };
+}
+
+/**
+ * Resolves the identity photo library for a video.
+ * Checks per-project override first, then global workspace library.
+ * Returns sorted absolute paths of JPEG/PNG files, or [] if none found.
+ */
+async function resolveIdentityPhotos(
+  workspaceRoot: string,
+  projectRoot: string
+): Promise<string[]> {
+  const { readdir } = await import("node:fs/promises");
+  const SUPPORTED = new Set([".jpg", ".jpeg", ".png"]);
+  const candidates = [
+    path.join(projectRoot, "identity-photos"),
+    path.join(workspaceRoot, "identity-photos"),
+  ];
+  for (const dir of candidates) {
+    try {
+      const entries = await readdir(dir);
+      const photos = entries
+        .filter((f) => SUPPORTED.has(path.extname(f).toLowerCase()))
+        .map((f) => path.join(dir, f))
+        .sort();
+      if (photos.length > 0) return photos;
+    } catch {
+      // directory doesn't exist — try next
+    }
+  }
+  return [];
 }
 
 function clamp(value: number, min: number, max: number) {
