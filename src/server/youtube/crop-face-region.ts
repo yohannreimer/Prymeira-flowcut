@@ -18,11 +18,11 @@ type CropFaceRegionDeps = {
 };
 
 /**
- * Detects the face region in an image using GPT-4o Vision,
- * crops to that region with generous padding, and saves a portrait-friendly crop.
+ * Two-pass face crop for screen recordings with PiP webcam:
+ * 1. Heuristic: sample 4 corner + center regions to find the camera feed
+ * 2. GPT-4o: refine within the candidate region to tightly frame the face
  *
- * Falls back to a right-bottom crop heuristic if no API key is available,
- * and falls back to the original image if detection fails entirely.
+ * Falls back gracefully at each step.
  */
 export async function cropFaceRegion(
   inputPath: string,
@@ -37,15 +37,30 @@ export async function cropFaceRegion(
     const imgWidth = meta.width ?? 1280;
     const imgHeight = meta.height ?? 720;
 
+    // Pass 1: find the camera feed region via skin-tone heuristic across 5 regions
+    const pipRegion = await detectPipRegion(buffer, imgWidth, imgHeight);
+
+    // Crop to that region to get just the camera feed
+    const pipBuffer = await sharp(buffer)
+      .extract({
+        left: pipRegion.left,
+        top: pipRegion.top,
+        width: pipRegion.width,
+        height: pipRegion.height,
+      })
+      .jpeg({ quality: 95 })
+      .toBuffer();
+
     const key = apiKey ?? process.env.OPENAI_API_KEY;
 
     if (!key && !deps.chatCompletionsCreate) {
-      // No API key: heuristic crop — take right 40% × bottom 70% (common PiP position)
-      await applyHeuristicCrop(inputPath, outputPath, imgWidth, imgHeight);
+      // No API: use the heuristic crop as final result
+      await sharp(pipBuffer).jpeg({ quality: 95 }).toFile(outputPath);
       return;
     }
 
-    const base64 = buffer.toString("base64");
+    // Pass 2: GPT-4o refines the face position within the already-cropped camera feed
+    const base64 = pipBuffer.toString("base64");
     const dataUrl = `data:image/jpeg;base64,${base64}`;
 
     const callCreate: (params: Record<string, unknown>) => Promise<{ choices: Array<{ message: { content: string | null } }> }> =
@@ -68,18 +83,20 @@ export async function cropFaceRegion(
             {
               type: "text",
               text: [
-                "Find the human face in this image.",
-                "Return a bounding box that tightly frames the face and shoulders — include space above the head (about 20% extra) and below the chin.",
-                "Express coordinates as percentages of the image dimensions (0 to 100).",
-                "Return JSON only: {\"found\": true, \"x\": <left%>, \"y\": <top%>, \"w\": <width%>, \"h\": <height%>}",
-                "If no face is visible, return {\"found\": false}.",
+                "This image shows a person talking to a camera.",
+                "Return a tight bounding box containing just the face and shoulders.",
+                "Start the top edge AT the hair — do NOT include dark toolbars, title bars, or UI chrome above the head.",
+                "If the top portion is a dark bar (app toolbar/title bar), exclude it from the bounding box.",
+                "Express as percentages of THIS image (0-100).",
+                "JSON only: {\"found\": true, \"x\": N, \"y\": N, \"w\": N, \"h\": N}",
+                "If no person visible, return {\"found\": false}.",
               ].join(" "),
             },
           ],
         },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 80,
+      max_tokens: 60,
     });
 
     const content = response.choices[0]?.message?.content ?? "{}";
@@ -92,13 +109,30 @@ export async function cropFaceRegion(
       parsed.w === undefined ||
       parsed.h === undefined
     ) {
-      await applyHeuristicCrop(inputPath, outputPath, imgWidth, imgHeight);
+      // GPT-4o couldn't refine — use the heuristic camera crop
+      await sharp(pipBuffer).jpeg({ quality: 95 }).toFile(outputPath);
       return;
     }
 
-    await applyCrop(inputPath, outputPath, parsed as FaceCropResult, imgWidth, imgHeight);
+    const pipMeta = await sharp(pipBuffer).metadata();
+    const pw = pipMeta.width ?? 640;
+    const ph = pipMeta.height ?? 480;
+
+    const left = Math.round(Math.max(0, (parsed.x / 100) * pw));
+    const top = Math.round(Math.max(0, (parsed.y / 100) * ph));
+    const width = Math.round(Math.min(pw - left, (parsed.w / 100) * pw));
+    const height = Math.round(Math.min(ph - top, (parsed.h / 100) * ph));
+
+    if (width < 40 || height < 40) {
+      await sharp(pipBuffer).jpeg({ quality: 95 }).toFile(outputPath);
+      return;
+    }
+
+    await sharp(pipBuffer)
+      .extract({ left, top, width, height })
+      .jpeg({ quality: 95 })
+      .toFile(outputPath);
   } catch {
-    // Last resort: copy original
     try {
       await sharp(inputPath).jpeg({ quality: 95 }).toFile(outputPath);
     } catch {
@@ -107,53 +141,84 @@ export async function cropFaceRegion(
   }
 }
 
-async function applyCrop(
-  inputPath: string,
-  outputPath: string,
-  coords: FaceCropResult,
+/**
+ * Finds which region of the frame most likely contains the webcam PiP
+ * by measuring skin-tone pixel density across 5 candidate regions.
+ */
+async function detectPipRegion(
+  buffer: Buffer,
   imgWidth: number,
   imgHeight: number
-): Promise<void> {
-  // Add 10% padding around the detected region
-  const padX = coords.w * 0.10;
-  const padY = coords.h * 0.10;
+): Promise<{ left: number; top: number; width: number; height: number }> {
+  // Define 5 candidate regions: 4 corners + full-right half
+  const regions = [
+    // bottom-right (most common PiP position)
+    { left: Math.round(imgWidth * 0.60), top: Math.round(imgHeight * 0.45), width: Math.round(imgWidth * 0.40), height: Math.round(imgHeight * 0.55) },
+    // top-right
+    { left: Math.round(imgWidth * 0.60), top: 0, width: Math.round(imgWidth * 0.40), height: Math.round(imgHeight * 0.55) },
+    // bottom-left
+    { left: 0, top: Math.round(imgHeight * 0.45), width: Math.round(imgWidth * 0.40), height: Math.round(imgHeight * 0.55) },
+    // top-left
+    { left: 0, top: 0, width: Math.round(imgWidth * 0.40), height: Math.round(imgHeight * 0.55) },
+    // full right half (for large PiPs)
+    { left: Math.round(imgWidth * 0.45), top: 0, width: Math.round(imgWidth * 0.55), height: imgHeight },
+  ];
 
-  const rawX = Math.max(0, (coords.x - padX) / 100) * imgWidth;
-  const rawY = Math.max(0, (coords.y - padY) / 100) * imgHeight;
-  const rawW = Math.min(100, coords.w + padX * 2) / 100 * imgWidth;
-  const rawH = Math.min(100, coords.h + padY * 2) / 100 * imgHeight;
+  let bestRegion = regions[0]!;
+  let bestScore = -1;
 
-  const left = Math.round(Math.max(0, rawX));
-  const top = Math.round(Math.max(0, rawY));
-  const width = Math.round(Math.min(imgWidth - left, rawW));
-  const height = Math.round(Math.min(imgHeight - top, rawH));
-
-  if (width < 40 || height < 40) {
-    await sharp(inputPath).jpeg({ quality: 95 }).toFile(outputPath);
-    return;
+  for (const region of regions) {
+    try {
+      const score = await scoreSkinTone(buffer, region);
+      if (score > bestScore) {
+        bestScore = score;
+        bestRegion = region;
+      }
+    } catch {
+      // skip failed regions
+    }
   }
 
-  await sharp(inputPath)
-    .extract({ left, top, width, height })
-    .jpeg({ quality: 95 })
-    .toFile(outputPath);
+  return bestRegion;
 }
 
-async function applyHeuristicCrop(
-  inputPath: string,
-  outputPath: string,
-  imgWidth: number,
-  imgHeight: number
-): Promise<void> {
-  // Heuristic for PiP screen recordings: face is typically in one corner.
-  // Take right 42% × bottom 75% — covers most common PiP placements.
-  const left = Math.round(imgWidth * 0.58);
-  const top = Math.round(imgHeight * 0.25);
-  const width = imgWidth - left;
-  const height = imgHeight - top;
+/**
+ * Counts pixels that fall in skin-tone hue range as a fraction of total pixels.
+ * Higher score = more skin-tone content = more likely to contain a face.
+ */
+async function scoreSkinTone(
+  buffer: Buffer,
+  region: { left: number; top: number; width: number; height: number }
+): Promise<number> {
+  // Resize to tiny for fast analysis
+  const { data, info } = await sharp(buffer)
+    .extract(region)
+    .resize(80, 60, { fit: "fill" })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
 
-  await sharp(inputPath)
-    .extract({ left, top, width, height })
-    .jpeg({ quality: 95 })
-    .toFile(outputPath);
+  const channels = info.channels ?? 3;
+  let skinPixels = 0;
+  const total = info.width * info.height;
+
+  for (let i = 0; i < data.length; i += channels) {
+    const r = data[i] ?? 0;
+    const g = data[i + 1] ?? 0;
+    const b = data[i + 2] ?? 0;
+
+    // Skin tone heuristic: R > G > B, R > 95, not too dark, not too light
+    const isSkin =
+      r > 95 &&
+      g > 40 &&
+      b > 20 &&
+      r > g &&
+      r > b &&
+      Math.abs(r - g) > 15 &&
+      r - b > 15 &&
+      r < 250;
+
+    if (isSkin) skinPixels++;
+  }
+
+  return skinPixels / total;
 }
