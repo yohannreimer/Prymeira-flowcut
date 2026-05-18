@@ -1,9 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { selectIdentityPhoto } from "./select-identity-photo";
 
 const stubReadImageFile = vi.fn().mockResolvedValue(Buffer.from("fake-jpeg"));
 
 describe("selectIdentityPhoto", () => {
+  beforeEach(() => {
+    stubReadImageFile.mockClear();
+  });
+
   it("returns the index from a successful GPT-4o Vision response", async () => {
     const mockCreate = vi.fn().mockResolvedValue({
       choices: [{ message: { content: '{"index": 2}' } }],
@@ -33,6 +37,10 @@ describe("selectIdentityPhoto", () => {
       (c: { type: string }) => c.type === "text"
     );
     expect(textContent.text).toContain("Meu título de teste");
+    const imageContents = calledMessages[0].content.filter(
+      (c: { type: string }) => c.type === "image_url"
+    );
+    expect(imageContents).toHaveLength(2); // one per photo path
   });
 
   it("returns 0 when the response index is out of range", async () => {

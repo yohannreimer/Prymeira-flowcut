@@ -57,6 +57,7 @@ export async function selectIdentityPhoto(
             ...imageContents,
             {
               type: "text",
+              // Prompt in PT-BR: matches the creator's audience and video language
               text: `Este vídeo se chama "${videoTitle}". Qual dessas ${photoPaths.length} fotos (numeradas de 0 a ${photoPaths.length - 1}) tem a expressão mais adequada para a thumbnail desse tema? Retorna apenas JSON: {"index": N}`,
             },
           ],
