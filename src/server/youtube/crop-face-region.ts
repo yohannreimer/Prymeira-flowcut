@@ -118,10 +118,21 @@ export async function cropFaceRegion(
     const pw = pipMeta.width ?? 640;
     const ph = pipMeta.height ?? 480;
 
-    const left = Math.round(Math.max(0, (parsed.x / 100) * pw));
-    const top = Math.round(Math.max(0, (parsed.y / 100) * ph));
-    const width = Math.round(Math.min(pw - left, (parsed.w / 100) * pw));
-    const height = Math.round(Math.min(ph - top, (parsed.h / 100) * ph));
+    // Add generous padding so hair and shoulders are not clipped.
+    // GPT-4o tends to return tight bounding boxes, so we expand outward:
+    // 22% of face height on top (hair), 10% on bottom, 12% on each side.
+    const faceW = (parsed.w / 100) * pw;
+    const faceH = (parsed.h / 100) * ph;
+    const padX = faceW * 0.12;
+    const padTop = faceH * 0.22;
+    const padBottom = faceH * 0.10;
+
+    const left = Math.round(Math.max(0, (parsed.x / 100) * pw - padX));
+    const top = Math.round(Math.max(0, (parsed.y / 100) * ph - padTop));
+    const right = Math.round(Math.min(pw, (parsed.x / 100) * pw + faceW + padX));
+    const bottom = Math.round(Math.min(ph, (parsed.y / 100) * ph + faceH + padBottom));
+    const width = right - left;
+    const height = bottom - top;
 
     if (width < 40 || height < 40) {
       await sharp(pipBuffer).jpeg({ quality: 95 }).toFile(outputPath);
