@@ -41,6 +41,7 @@ import type { ProjectLibraryItem } from "../shared/project-library";
 import { getNextSelectedSectionId, getSelectedSection, replaceSection } from "./section-model";
 import { compareManualDurations, dragCutEdge, getZoomWindow, timeToWindowPercent } from "./timeline-model";
 import { composeYoutubeDescription, getGeneratedThumbnailAssets, getInitialSelectedThumbnailName } from "./youtube-package-ui";
+import { GuidedShell } from "./GuidedShell";
 
 type TimelineSnapshot = {
   cuts: ManualCut[];
@@ -912,32 +913,13 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
-      <section className="topbar">
-        <div className="brand-lockup">
-          <span className="brand-mark">MF</span>
-          <div>
-            <p className="eyebrow">MediaFactory SaaS</p>
-            <h1>Publicador de vídeos com IA</h1>
-          </div>
-        </div>
-        <div className="topbar-status">
-          <span className="status-label">Render local</span>
-          {job ? <span className={`status status-${job.status}`}>{translateJobState(job)}</span> : <span className="status">ocioso</span>}
-        </div>
-      </section>
-
-      <GuidedSaasFlow
+    <>
+      <GuidedShell
         file={file}
         job={job}
         editPlan={editPlan}
         youtubePackageSummary={youtubePackageSummary}
-        selectedAssetName={selectedPackageAssetName}
         selectedGeneratedThumbnailName={selectedGeneratedThumbnailName}
-        isPublicationReviewOpen={isPublicationReviewOpen}
-        publicationTitle={publicationTitle}
-        publicationDescription={publicationDescription}
-        publicationVisibility={publicationVisibility}
         isExporting={isExporting}
         exportJob={exportJob}
         isUploading={isUploading}
@@ -945,35 +927,22 @@ export function App() {
         captionJob={captionJob}
         isGeneratingYoutubePackage={isGeneratingYoutubePackage}
         youtubePackageJob={youtubePackageJob}
-        fileLimitBytes={fileLimitBytes}
+        uploadConfig={uploadConfig}
         isFileTooLarge={Boolean(isFileTooLarge)}
         error={error}
+        projects={projects}
+        publicationTitle={publicationTitle}
+        publicationDescription={publicationDescription}
+        publicationVisibility={publicationVisibility}
         onFileSelected={resetForSelectedFile}
         onStartUpload={() => void startUpload()}
         onGenerateCaptions={() => void onGenerateCaptions()}
         onGenerateYoutubePackage={() => void onGenerateYoutubePackage()}
-        onReviewPublish={() => {
-          setIsPublicationReviewOpen(true);
-          setPublicationTitle((currentTitle) => currentTitle.trim() ? currentTitle : youtubePackageSummary?.title ?? "");
-          setPublicationDescription((currentDescription) => (
-            currentDescription.trim()
-              ? currentDescription
-              : composeYoutubeDescription(youtubePackageSummary?.description ?? "", youtubePackageSummary?.chapters ?? null)
-          ));
-          setSelectedGeneratedThumbnailName((currentName) => getInitialSelectedThumbnailName(youtubePackageSummary, currentName));
-        }}
-        onSelectAsset={setSelectedPackageAssetName}
         onSelectGeneratedThumbnail={setSelectedGeneratedThumbnailName}
         onPublicationTitleChange={setPublicationTitle}
         onPublicationDescriptionChange={setPublicationDescription}
         onPublicationVisibilityChange={setPublicationVisibility}
         onStartFinalExport={() => void onExport()}
-        onOpenAdvancedExport={() => {
-          setActiveWorkspaceTab("export");
-          setIsAdvancedEditorOpen(true);
-        }}
-        isAdvancedEditorOpen={isAdvancedEditorOpen}
-        onToggleAdvanced={() => setIsAdvancedEditorOpen((value) => !value)}
       />
 
       {isAdvancedEditorOpen ? (
@@ -1453,7 +1422,7 @@ export function App() {
         </aside>
       </section>
       ) : null}
-    </main>
+    </>
   );
 }
 
