@@ -13,6 +13,7 @@ export type YoutubePackageSummary = {
   status: "missing" | "incomplete" | "ready";
   title: string | null;
   description: string | null;
+  chapters: string | null;
   transcriptAvailable: boolean;
   thumbnailPrompt: string | null;
   thumbnailIdeas: ThumbnailIdea[];
@@ -42,9 +43,10 @@ export async function readYoutubePackageSummary(projectRoot: string, projectId: 
   }
 
   const missing = REQUIRED_TEXT_FILES.filter((fileName) => !entries.includes(fileName));
-  const [title, description, transcript, thumbnailPrompt] = await Promise.all([
+  const [title, description, chapters, transcript, thumbnailPrompt] = await Promise.all([
     readOptionalText(packageDir, "titulo.txt"),
     readOptionalText(packageDir, "descricao.txt"),
+    readOptionalText(packageDir, "chapters.txt"),
     readOptionalText(packageDir, "transcricao.txt"),
     readOptionalText(packageDir, "prompt-thumbnail.txt")
   ]);
@@ -53,6 +55,7 @@ export async function readYoutubePackageSummary(projectRoot: string, projectId: 
     status: missing.length === 0 ? "ready" : "incomplete",
     title,
     description,
+    chapters,
     transcriptAvailable: Boolean(transcript),
     thumbnailPrompt,
     thumbnailIdeas: parseThumbnailIdeas(thumbnailPrompt),
@@ -77,6 +80,7 @@ function createEmptySummary(status: YoutubePackageSummary["status"], missing: st
     status,
     title: null,
     description: null,
+    chapters: null,
     transcriptAvailable: false,
     thumbnailPrompt: null,
     thumbnailIdeas: [],

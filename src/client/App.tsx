@@ -40,6 +40,7 @@ import {
 import type { ProjectLibraryItem } from "../shared/project-library";
 import { getNextSelectedSectionId, getSelectedSection, replaceSection } from "./section-model";
 import { compareManualDurations, dragCutEdge, getZoomWindow, timeToWindowPercent } from "./timeline-model";
+import { composeYoutubeDescription, getGeneratedThumbnailAssets, getInitialSelectedThumbnailName } from "./youtube-package-ui";
 
 type TimelineSnapshot = {
   cuts: ManualCut[];
@@ -117,6 +118,11 @@ export function App() {
   const [youtubePackageJob, setYoutubePackageJob] = useState<ProjectJob | null>(null);
   const [youtubePackageSummary, setYoutubePackageSummary] = useState<YoutubePackageSummary | null>(null);
   const [selectedPackageAssetName, setSelectedPackageAssetName] = useState<string | null>(null);
+  const [selectedGeneratedThumbnailName, setSelectedGeneratedThumbnailName] = useState<string | null>(null);
+  const [isPublicationReviewOpen, setIsPublicationReviewOpen] = useState(false);
+  const [publicationTitle, setPublicationTitle] = useState("");
+  const [publicationDescription, setPublicationDescription] = useState("");
+  const [publicationVisibility, setPublicationVisibility] = useState<"private" | "unlisted" | "public">("private");
   const [isAdvancedEditorOpen, setIsAdvancedEditorOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const compareBeforeRef = useRef<HTMLVideoElement | null>(null);
@@ -376,6 +382,11 @@ export function App() {
     setYoutubePackageJob(null);
     setYoutubePackageSummary(null);
     setSelectedPackageAssetName(null);
+    setSelectedGeneratedThumbnailName(null);
+    setIsPublicationReviewOpen(false);
+    setPublicationTitle("");
+    setPublicationDescription("");
+    setPublicationVisibility("private");
     setIsGeneratingYoutubePackage(false);
     setCaptionSettings(DEFAULT_CAPTION_SETTINGS);
     setCaptionStyleId(DEFAULT_CAPTION_STYLE_ID);
@@ -521,6 +532,11 @@ export function App() {
         if (currentName && summary.assets.some((asset) => asset.name === currentName)) return currentName;
         return summary.assets[0]?.name ?? null;
       });
+      setSelectedGeneratedThumbnailName((currentName) => getInitialSelectedThumbnailName(summary, currentName));
+      setPublicationTitle((currentTitle) => currentTitle.trim() ? currentTitle : summary.title ?? "");
+      setPublicationDescription((currentDescription) => (
+        currentDescription.trim() ? currentDescription : composeYoutubeDescription(summary.description ?? "", summary.chapters)
+      ));
     } catch (err) {
       const detail = err instanceof Error ? `: ${err.message}` : "";
       setError(`Falha ao carregar pacote YouTube${detail}`);
@@ -547,6 +563,11 @@ export function App() {
         setYoutubePackageJob(null);
         setYoutubePackageSummary(null);
         setSelectedPackageAssetName(null);
+        setSelectedGeneratedThumbnailName(null);
+        setIsPublicationReviewOpen(false);
+        setPublicationTitle("");
+        setPublicationDescription("");
+        setPublicationVisibility("private");
         setIsExporting(false);
         setIsGeneratingYoutubePackage(false);
       }
@@ -575,6 +596,11 @@ export function App() {
       setYoutubePackageJob(null);
       setYoutubePackageSummary(null);
       setSelectedPackageAssetName(null);
+      setSelectedGeneratedThumbnailName(null);
+      setIsPublicationReviewOpen(false);
+      setPublicationTitle("");
+      setPublicationDescription("");
+      setPublicationVisibility("private");
       setIsExporting(false);
       setIsGeneratingYoutubePackage(false);
       setCaptionSettings(plan.captionSettings);
@@ -666,10 +692,12 @@ export function App() {
     setIsGeneratingYoutubePackage(true);
     setYoutubePackageSummary(null);
     setSelectedPackageAssetName(null);
+    setSelectedGeneratedThumbnailName(null);
+    setIsPublicationReviewOpen(false);
     try {
       const nextJob = await generateYoutubePackage(job.projectId);
       setYoutubePackageJob(nextJob);
-      setActiveWorkspaceTab("export");
+      setActiveWorkspaceTab("review");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao criar pacote YouTube");
     } finally {
@@ -905,6 +933,13 @@ export function App() {
         editPlan={editPlan}
         youtubePackageSummary={youtubePackageSummary}
         selectedAssetName={selectedPackageAssetName}
+        selectedGeneratedThumbnailName={selectedGeneratedThumbnailName}
+        isPublicationReviewOpen={isPublicationReviewOpen}
+        publicationTitle={publicationTitle}
+        publicationDescription={publicationDescription}
+        publicationVisibility={publicationVisibility}
+        isExporting={isExporting}
+        exportJob={exportJob}
         isUploading={isUploading}
         isCaptioning={isCaptioning}
         captionJob={captionJob}
@@ -918,10 +953,25 @@ export function App() {
         onGenerateCaptions={() => void onGenerateCaptions()}
         onGenerateYoutubePackage={() => void onGenerateYoutubePackage()}
         onReviewPublish={() => {
+          setIsPublicationReviewOpen(true);
+          setPublicationTitle((currentTitle) => currentTitle.trim() ? currentTitle : youtubePackageSummary?.title ?? "");
+          setPublicationDescription((currentDescription) => (
+            currentDescription.trim()
+              ? currentDescription
+              : composeYoutubeDescription(youtubePackageSummary?.description ?? "", youtubePackageSummary?.chapters ?? null)
+          ));
+          setSelectedGeneratedThumbnailName((currentName) => getInitialSelectedThumbnailName(youtubePackageSummary, currentName));
+        }}
+        onSelectAsset={setSelectedPackageAssetName}
+        onSelectGeneratedThumbnail={setSelectedGeneratedThumbnailName}
+        onPublicationTitleChange={setPublicationTitle}
+        onPublicationDescriptionChange={setPublicationDescription}
+        onPublicationVisibilityChange={setPublicationVisibility}
+        onStartFinalExport={() => void onExport()}
+        onOpenAdvancedExport={() => {
           setActiveWorkspaceTab("export");
           setIsAdvancedEditorOpen(true);
         }}
-        onSelectAsset={setSelectedPackageAssetName}
         isAdvancedEditorOpen={isAdvancedEditorOpen}
         onToggleAdvanced={() => setIsAdvancedEditorOpen((value) => !value)}
       />
@@ -1413,6 +1463,13 @@ type GuidedSaasFlowProps = {
   editPlan: EditPlanSummary | null;
   youtubePackageSummary: YoutubePackageSummary | null;
   selectedAssetName: string | null;
+  selectedGeneratedThumbnailName: string | null;
+  isPublicationReviewOpen: boolean;
+  publicationTitle: string;
+  publicationDescription: string;
+  publicationVisibility: "private" | "unlisted" | "public";
+  isExporting: boolean;
+  exportJob: ProjectJob | null;
   isUploading: boolean;
   isCaptioning: boolean;
   captionJob: ProjectJob | null;
@@ -1428,6 +1485,12 @@ type GuidedSaasFlowProps = {
   onGenerateYoutubePackage: () => void;
   onReviewPublish: () => void;
   onSelectAsset: (assetName: string) => void;
+  onSelectGeneratedThumbnail: (assetName: string) => void;
+  onPublicationTitleChange: (title: string) => void;
+  onPublicationDescriptionChange: (description: string) => void;
+  onPublicationVisibilityChange: (visibility: "private" | "unlisted" | "public") => void;
+  onStartFinalExport: () => void;
+  onOpenAdvancedExport: () => void;
   onToggleAdvanced: () => void;
 };
 
@@ -1437,6 +1500,13 @@ function GuidedSaasFlow({
   editPlan,
   youtubePackageSummary,
   selectedAssetName,
+  selectedGeneratedThumbnailName,
+  isPublicationReviewOpen,
+  publicationTitle,
+  publicationDescription,
+  publicationVisibility,
+  isExporting,
+  exportJob,
   isUploading,
   isCaptioning,
   captionJob,
@@ -1452,6 +1522,12 @@ function GuidedSaasFlow({
   onGenerateYoutubePackage,
   onReviewPublish,
   onSelectAsset,
+  onSelectGeneratedThumbnail,
+  onPublicationTitleChange,
+  onPublicationDescriptionChange,
+  onPublicationVisibilityChange,
+  onStartFinalExport,
+  onOpenAdvancedExport,
   onToggleAdvanced
 }: GuidedSaasFlowProps) {
   const hasCut = Boolean(job?.outputUrl);
@@ -1463,6 +1539,10 @@ function GuidedSaasFlow({
   const isPackageRunning = Boolean(youtubePackageJob && isActiveJob(youtubePackageJob));
   const selectedAsset = youtubePackageSummary?.assets.find((asset) => asset.name === selectedAssetName)
     ?? youtubePackageSummary?.assets[0]
+    ?? null;
+  const generatedThumbnails = getGeneratedThumbnailAssets(youtubePackageSummary);
+  const selectedGeneratedThumbnail = generatedThumbnails.find((asset) => asset.name === selectedGeneratedThumbnailName)
+    ?? generatedThumbnails[0]
     ?? null;
   const packageIssue = youtubePackageSummary?.status === "incomplete"
     ? `Faltando: ${youtubePackageSummary.missing.join(", ")}`
@@ -1618,6 +1698,87 @@ function GuidedSaasFlow({
             <span>{thumbnailIdeaCount ? `${thumbnailIdeaCount} ideias V9 prontas` : youtubePackageSummary?.thumbnailPrompt ? "Prompt de thumbnail pronto" : "Prompt pendente"}</span>
             <span>{hasPackage ? "Revisão liberada" : "Pacote pendente"}</span>
           </div>
+          {isPublicationReviewOpen && hasPackage ? (
+            <section className="saas-publication-review" aria-label="Revisão da publicação YouTube">
+              <div className="publication-thumb-stage">
+                {selectedGeneratedThumbnail ? (
+                  <img src={selectedGeneratedThumbnail.url} alt={`Thumbnail selecionada ${selectedGeneratedThumbnail.name}`} />
+                ) : (
+                  <div className="publication-thumb-empty">
+                    <strong>Sem thumbnail renderizada</strong>
+                    <span>Gere o pacote YouTube novamente para criar as opções V9.</span>
+                  </div>
+                )}
+                <div>
+                  <p className="section-label">Thumbnail escolhida</p>
+                  <strong>{selectedGeneratedThumbnail?.name ?? "Nenhuma opção selecionada"}</strong>
+                </div>
+              </div>
+
+              {generatedThumbnails.length ? (
+                <div className="publication-thumb-picker" aria-label="Selecionar thumbnail">
+                  {generatedThumbnails.map((asset, index) => (
+                    <button
+                      type="button"
+                      className={asset.name === selectedGeneratedThumbnail?.name ? "publication-thumb-option publication-thumb-option-selected" : "publication-thumb-option"}
+                      key={asset.name}
+                      onClick={() => onSelectGeneratedThumbnail(asset.name)}
+                    >
+                      <img src={asset.url} alt={`Opção de thumbnail ${index + 1}`} />
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="publication-final-copy">
+                <label>
+                  <span>Título final</span>
+                  <input value={publicationTitle} onChange={(event) => onPublicationTitleChange(event.currentTarget.value)} />
+                </label>
+                <label>
+                  <span>Descrição final</span>
+                  <textarea value={publicationDescription} rows={6} onChange={(event) => onPublicationDescriptionChange(event.currentTarget.value)} />
+                </label>
+                <div className="publication-settings-row" role="group" aria-label="Visibilidade do YouTube">
+                  {(["private", "unlisted", "public"] as const).map((visibility) => (
+                    <button
+                      type="button"
+                      className={visibility === publicationVisibility ? "publication-setting-active" : ""}
+                      key={visibility}
+                      onClick={() => onPublicationVisibilityChange(visibility)}
+                    >
+                      {translateVisibility(visibility)}
+                    </button>
+                  ))}
+                </div>
+                {youtubePackageSummary?.chapters ? (
+                  <details className="publication-chapters">
+                    <summary>Capítulos que vão para a descrição</summary>
+                    <pre>{youtubePackageSummary.chapters}</pre>
+                  </details>
+                ) : (
+                  <small>Capítulos ainda não foram gerados neste pacote. Gere o pacote YouTube de novo para incluir chapters.</small>
+                )}
+                <div className="publication-actions">
+                  <button type="button" onClick={onOpenAdvancedExport}>
+                    Ajustes avançados
+                  </button>
+                  <button type="button" className="saas-primary-action" onClick={onStartFinalExport} disabled={isExporting || !job}>
+                    {isExporting ? "Gerando export..." : exportJob?.outputUrl ? "Gerar novo export" : "Gerar export final"}
+                  </button>
+                  <button type="button" className="saas-publish-disabled" disabled>
+                    Postar no YouTube
+                  </button>
+                </div>
+                <small>
+                  {exportJob?.outputUrl
+                    ? "Export final pronto. A postagem direta entra quando a conexão do YouTube estiver ativa neste app."
+                    : "Revise thumb, título e descrição antes de gerar o export final."}
+                </small>
+              </div>
+            </section>
+          ) : null}
           {youtubePackageSummary?.thumbnailIdeas.length ? (
             <div className="saas-thumbnail-ideas">
               {youtubePackageSummary.thumbnailIdeas.map((idea) => (
@@ -1665,6 +1826,15 @@ function GuidedSaasFlow({
 
 function formatSeconds(seconds: number) {
   return `${seconds.toFixed(1)}s`;
+}
+
+function translateVisibility(visibility: "private" | "unlisted" | "public") {
+  const labels = {
+    private: "Privado",
+    unlisted: "Não listado",
+    public: "Público"
+  };
+  return labels[visibility];
 }
 
 function formatSignedSeconds(seconds: number) {
@@ -1736,7 +1906,8 @@ function getYoutubePackageProgress(job: ProjectJob) {
     youtube_package_queued: 8,
     youtube_package_prepare: 22,
     youtube_package_ai: 55,
-    youtube_package_frames: 82
+    youtube_package_frames: 82,
+    youtube_package_thumbnails: 92
   };
   return progressByStage[job.stage] ?? (job.status === "running" ? 50 : 8);
 }
@@ -3229,6 +3400,7 @@ function translateStage(stage: string) {
     youtube_package_prepare: "preparando pacote",
     youtube_package_ai: "IA escrevendo",
     youtube_package_frames: "extraindo imagens",
+    youtube_package_thumbnails: "renderizando thumbs",
     export_queued: "export na fila",
     export_prepare: "preparando export",
     export_fast_cut: "export rápido",
@@ -3276,6 +3448,7 @@ function translateJobMessage(message: string) {
     "Preparing YouTube package": "Preparando pacote YouTube",
     "Writing YouTube title, description and thumbnail prompt": "IA escrevendo título, descrição e prompt",
     "Extracting thumbnail reference frames": "Extraindo imagens de referência",
+    "Rendering V9 thumbnail images": "Renderizando thumbnails V9",
     "YouTube package is ready": "Pacote YouTube pronto",
     "YouTube package failed": "Falha ao criar pacote YouTube",
     "Export accepted": "Exportação aceita",

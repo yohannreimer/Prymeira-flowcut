@@ -264,6 +264,7 @@ describe("api client", () => {
       status: "ready",
       title: "Titulo pronto",
       description: "Descricao pronta",
+      chapters: "00:00 Inicio\n00:30 Ideia principal",
       transcriptAvailable: true,
       thumbnailPrompt: "Prompt de thumbnail",
       missing: [],

@@ -11,6 +11,7 @@ describe("readYoutubePackageSummary", () => {
     await mkdir(packageDir, { recursive: true });
     await writeFile(path.join(packageDir, "titulo.txt"), "Titulo pronto\n");
     await writeFile(path.join(packageDir, "descricao.txt"), "Descricao pronta\n");
+    await writeFile(path.join(packageDir, "chapters.txt"), "00:00 Inicio\n00:30 Ideia principal\n");
     await writeFile(path.join(packageDir, "transcricao.txt"), "[00:00 - 00:01] Oi\n");
     await writeFile(path.join(packageDir, "prompt-thumbnail.txt"), "VARIACAO 1\nFiz Mesmo Assim\n\nPrompt A\n\n---\n\nVARIACAO 2\nConflito Resultado\n\nPrompt B\n");
     await writeFile(path.join(packageDir, "thumbnail-ref-01.jpg"), "jpg");
@@ -21,6 +22,7 @@ describe("readYoutubePackageSummary", () => {
       status: "ready",
       title: "Titulo pronto",
       description: "Descricao pronta",
+      chapters: "00:00 Inicio\n00:30 Ideia principal",
       transcriptAvailable: true,
       thumbnailPrompt: "VARIACAO 1\nFiz Mesmo Assim\n\nPrompt A\n\n---\n\nVARIACAO 2\nConflito Resultado\n\nPrompt B",
       thumbnailIdeas: [
@@ -56,6 +58,7 @@ describe("readYoutubePackageSummary", () => {
       status: "incomplete",
       title: null,
       description: null,
+      chapters: null,
       transcriptAvailable: false,
       thumbnailPrompt: null,
       thumbnailIdeas: [],
@@ -71,6 +74,7 @@ describe("readYoutubePackageSummary", () => {
       status: "missing",
       title: null,
       description: null,
+      chapters: null,
       transcriptAvailable: false,
       thumbnailPrompt: null,
       thumbnailIdeas: [],

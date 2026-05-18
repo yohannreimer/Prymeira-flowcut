@@ -11,9 +11,22 @@ const thumbnailConceptIds = [
   "rede_social_negocio"
 ] as const;
 
+const thumbnailRenderTextSchema = z.object({
+  headline: z.array(z.string().min(1).max(32)).min(1).max(3),
+  subhead: z.string().min(4).max(90),
+  badge: z.string().min(2).max(24),
+  stamp: z.string().min(2).max(48),
+  leftLabel: z.string().min(2).max(32),
+  rightLabel: z.string().min(2).max(32),
+  checklistBad: z.string().min(2).max(40),
+  checklistGood: z.array(z.string().min(2).max(40)).length(2),
+  tags: z.array(z.string().min(2).max(34)).length(3)
+});
+
 const thumbnailPromptSchema = z.object({
   conceptId: z.enum(thumbnailConceptIds),
   title: z.string().min(4).max(80),
+  renderText: thumbnailRenderTextSchema,
   prompt: z.string().min(500).max(5000)
 });
 
@@ -31,6 +44,10 @@ const v9ThumbnailStyleGuide = [
 export const youtubePackageCopySchema = z.object({
   title: z.string().min(12).max(95),
   description: z.string().min(120).max(5000),
+  chapters: z.array(z.object({
+    time: z.string().regex(/^\d{1,2}:\d{2}(?::\d{2})?$/),
+    title: z.string().min(3).max(70)
+  })).min(1).max(8),
   thumbnailPrompts: z.array(thumbnailPromptSchema).length(5)
 });
 
@@ -70,9 +87,11 @@ export async function generateYoutubePackageCopy(
           "Nao use promessas falsas, clickbait vazio, emojis, hashtags genericas ou linguagem corporativa.",
           "O titulo deve vender curiosidade clara e beneficio concreto sem parecer sensacionalista barato.",
           "A descricao deve parecer escrita por um criador humano: gancho inicial, contexto, promessa do video e CTA limpo.",
+          "Crie capitulos no campo chapters com timestamps reais e titulos curtos em portugues, prontos para entrar na descricao do YouTube.",
           "Os prompts de thumbnail precisam ser extremamente detalhados para ChatGPT/GPT Image ou para um agente gerar Remotion/HTML/CSS: use as quatro imagens e os dois clipes curtos de referencia do rosto, preserve identidade, use composicao profissional, contraste alto, pouco texto e direcao visual de alta conversao.",
           "Os clipes identity-ref-01.mp4 e identity-ref-02.mp4 servem para fidedignidade: angulos, microexpressoes, proporcoes do rosto, cabelo, barba, pele, iluminacao e jeito natural da pessoa.",
-          "Sempre entregue exatamente 5 objetos no campo thumbnailPrompts. Cada objeto deve ter conceptId, title e prompt. Nao coloque varios prompts dentro do mesmo objeto.",
+          "Sempre entregue exatamente 5 objetos no campo thumbnailPrompts. Cada objeto deve ter conceptId, title, renderText e prompt. Nao coloque varios prompts dentro do mesmo objeto.",
+          "O campo renderText e o texto final renderizado na thumbnail, nao uma descricao. Ele precisa ser especifico ao video atual e deve controlar headline, subhead, badge, stamp, leftLabel, rightLabel, checklistBad, checklistGood e tags.",
           "Os conceptIds obrigatorios, nesta ordem, sao: fiz_mesmo_assim, conflito_resultado, manchete_editorial, sistema_status, rede_social_negocio.",
           "Cada objeto precisa ser um prompt de thumbnail no estilo V9 polished: ideias visualmente diferentes, criadas para render premium em 16:9, master 2560x1440 e leitura perfeita em celular.",
           "Cada prompt deve servir como direcao criativa completa para Remotion/HTML/CSS ou geracao visual equivalente, nao como referencia para copiar thumbnails antigas.",
@@ -110,11 +129,20 @@ function buildYoutubePackagePrompt(plan: EditPlan, transcript: string) {
     "Crie:",
     "1. Um titulo unico em portugues do Brasil, com alta chance de CTR, ate 95 caracteres, sem emoji.",
     "2. Uma descricao pronta para o YouTube, com primeira linha forte, resumo do valor, CTA natural e sem timestamps inventados.",
-    "3. Exatamente 5 prompts de thumbnail para colar no ChatGPT ou enviar para um agente renderizar com Remotion/HTML/CSS, junto com 4 imagens e os 2 clipes de referencia do rosto do criador.",
+    "3. chapters: 1 a 8 capitulos com timestamps reais baseados na transcricao e nas secoes editoriais. Use formato 00:00 Titulo ou 01:23 Titulo, sem inventar assuntos ausentes.",
+    "4. Exatamente 5 prompts de thumbnail para colar no ChatGPT ou enviar para um agente renderizar com Remotion/HTML/CSS, junto com 4 imagens e os 2 clipes de referencia do rosto do criador.",
     "",
     "Regras das 5 variacoes de thumbnail:",
+    "- Retorne chapters fora de thumbnailPrompts. Os chapters devem usar timestamps reais da transcricao ou do plano, prontos para entrar na descricao do YouTube.",
     "- Retorne 5 objetos completos no campo thumbnailPrompts, exatamente nesta ordem: fiz_mesmo_assim, conflito_resultado, manchete_editorial, sistema_status, rede_social_negocio.",
-    "- Cada objeto deve ter: conceptId, title e prompt. O campo prompt deve conter somente o prompt daquela variacao, nunca texto das outras variacoes.",
+    "- Cada objeto deve ter: conceptId, title, renderText e prompt. O campo prompt deve conter somente o prompt daquela variacao, nunca texto das outras variacoes.",
+    "- renderText deve trazer os textos finais que vao aparecer na imagem, especificos do video atual, sem reciclar nomes fixos do template.",
+    "- renderText.headline: 1 a 3 linhas, texto curtissimo de thumbnail com no maximo 4 palavras no total quando possivel.",
+    "- renderText.subhead: apoio curto, concreto e clicavel, nunca generico.",
+    "- renderText.badge e renderText.stamp: microcopy curta que contextualiza o video atual.",
+    "- renderText.leftLabel e renderText.rightLabel: contraste do layout antes/depois ou problema/resultado.",
+    "- renderText.checklistBad: uma trava real citada ou inferida da transcricao; renderText.checklistGood: exatamente 2 ganhos/acoes reais.",
+    "- renderText.tags: exatamente 3 tags editoriais curtas tiradas da tese do video.",
     "- Cada prompt deve dizer explicitamente para usar as 4 imagens e os 2 clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia de identidade/rosto.",
     "- Explique que os clipes sao referencia de fidedignidade da pessoa: movimento real, angulos, microexpressoes, cabelo, pele, barba, proporcoes e iluminacao. Nao peça para copiar um frame literal dos clipes.",
     "- Cada prompt deve pedir thumbnail 16:9 profissional, nitida, com render em master 2560x1440 e downsample para 1280x720, tipografia grande, poucos elementos finos e leitura instantanea em tela pequena.",

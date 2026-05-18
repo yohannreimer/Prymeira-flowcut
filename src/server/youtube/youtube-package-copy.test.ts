@@ -54,16 +54,31 @@ function createPlan(): EditPlan {
 
 describe("generateYoutubePackageCopy", () => {
   it("asks the model for exactly five V9 polished thumbnail prompts", async () => {
+    const renderText = {
+      headline: ["CRIEI", "MESMO", "ASSIM"],
+      subhead: "gravado no dia travado",
+      badge: "CANAL",
+      stamp: "dia travado",
+      leftLabel: "DIA TRAVADO",
+      rightLabel: "CANAL CRIADO",
+      checklistBad: "ideias travadas",
+      checklistGood: ["gravei mesmo assim", "canal criado"],
+      tags: ["IDEIAS TRAVADAS", "INSTAGRAM COMO ALAVANCA", "PROCESSO REAL"]
+    };
     const parse = vi.fn().mockResolvedValue({
       output_parsed: {
         title: "Esse Fluxo De Thumbnail Aumenta Cliques",
         description: "Uma descricao pronta para YouTube com gancho, contexto, promessa concreta e chamada para acao natural.",
+        chapters: [
+          { time: "00:00", title: "Inicio forte" },
+          { time: "00:40", title: "Ideia principal" }
+        ],
         thumbnailPrompts: [
-          { conceptId: "fiz_mesmo_assim", title: "Fiz Mesmo Assim", prompt: "Prompt A ".repeat(70) },
-          { conceptId: "conflito_resultado", title: "Conflito Resultado", prompt: "Prompt B ".repeat(70) },
-          { conceptId: "manchete_editorial", title: "Manchete Editorial", prompt: "Prompt C ".repeat(70) },
-          { conceptId: "sistema_status", title: "Sistema Status", prompt: "Prompt D ".repeat(70) },
-          { conceptId: "rede_social_negocio", title: "Rede Social Negocio", prompt: "Prompt E ".repeat(70) }
+          { conceptId: "fiz_mesmo_assim", title: "Fiz Mesmo Assim", renderText, prompt: "Prompt A ".repeat(70) },
+          { conceptId: "conflito_resultado", title: "Conflito Resultado", renderText, prompt: "Prompt B ".repeat(70) },
+          { conceptId: "manchete_editorial", title: "Manchete Editorial", renderText, prompt: "Prompt C ".repeat(70) },
+          { conceptId: "sistema_status", title: "Sistema Status", renderText, prompt: "Prompt D ".repeat(70) },
+          { conceptId: "rede_social_negocio", title: "Rede Social Negocio", renderText, prompt: "Prompt E ".repeat(70) }
         ]
       }
     });
@@ -76,6 +91,9 @@ describe("generateYoutubePackageCopy", () => {
     const systemPrompt = request.input[0].content as string;
     const userPrompt = request.input[1].content as string;
     expect(systemPrompt).toContain("exatamente 5 objetos");
+    expect(systemPrompt).toContain("renderText");
+    expect(systemPrompt).toContain("texto final renderizado");
+    expect(systemPrompt).toContain("capitulos");
     expect(systemPrompt).toContain("conceptId");
     expect(systemPrompt).toContain("V9 polished");
     expect(systemPrompt).toContain("Remotion/HTML/CSS");
@@ -85,6 +103,14 @@ describe("generateYoutubePackageCopy", () => {
     expect(systemPrompt).toContain("V9 1 / fiz_mesmo_assim");
     expect(systemPrompt).toContain("V9 5 / rede_social_negocio");
     expect(userPrompt).toContain("Retorne 5 objetos completos");
+    expect(userPrompt).toContain("headline");
+    expect(userPrompt).toContain("subhead");
+    expect(userPrompt).toContain("checklistBad");
+    expect(userPrompt).toContain("checklistGood");
+    expect(userPrompt).toContain("tags");
+    expect(userPrompt).toContain("especificos do video atual");
+    expect(userPrompt).toContain("chapters");
+    expect(userPrompt).toContain("timestamps reais");
     expect(userPrompt).toContain("fiz_mesmo_assim");
     expect(userPrompt).toContain("Nao use as thumbnails antigas como arquivos de referencia");
     expect(userPrompt).toContain("Conceito 1 = fiz mesmo assim: siga o layout V9 1");

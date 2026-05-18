@@ -37,6 +37,7 @@ export type YoutubePackageSummary = {
   status: "missing" | "incomplete" | "ready";
   title: string | null;
   description: string | null;
+  chapters: string | null;
   transcriptAvailable: boolean;
   thumbnailPrompt: string | null;
   thumbnailIdeas: Array<{
