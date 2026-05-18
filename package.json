@@ -16,6 +16,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1045.0",
     "@remotion/bundler": "^4.0.457",
+    "@remotion/google-fonts": "^4.0.462",
     "@remotion/renderer": "^4.0.457",
     "@vitejs/plugin-react": "^5.0.0",
     "dotenv": "^17.4.2",
