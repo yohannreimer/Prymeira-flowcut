@@ -171,6 +171,72 @@ describe("runYoutubePackageJob", () => {
     });
   });
 
+  it("uses identity photo library for ref-01 when photos are present", async () => {
+    await withTempDir("ai-editor-youtube-package-identity-", async (dir) => {
+      const workspace = await createProjectWorkspace(dir, "project_1");
+      const sourcePath = path.join(workspace.uploads, "source.mp4");
+      const roughCutPath = path.join(workspace.renders, "rough-cut.mp4");
+
+      // Create a per-project identity-photos folder (workspace.root/identity-photos/)
+      const identityPhotosDir = path.join(workspace.root, "identity-photos");
+      await mkdir(identityPhotosDir, { recursive: true });
+      await writeFile(path.join(identityPhotosDir, "expressivo.jpg"), "fake-photo");
+
+      await mkdir(workspace.renders, { recursive: true });
+      await writeFile(sourcePath, "source");
+      await writeFile(roughCutPath, "rough");
+      await writeCaptionedPlan(workspace.planPath, sourcePath);
+
+      const jobs = createJobStore();
+      const job = jobs.create({ projectId: workspace.projectId, sourcePath });
+      const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+
+      const renderV9ThumbnailImages = vi.fn(async (packageDir: string) => {
+        await Promise.all([1, 2, 3, 4, 5, 6].map((index) =>
+          writeFile(path.join(packageDir, `thumbnail-generated-${String(index).padStart(2, "0")}.png`), "png")
+        ));
+      });
+
+      const generateYoutubePackageCopy = vi.fn().mockResolvedValue({
+        title: "Esse Fluxo De YouTube Economiza Horas",
+        description: "Uma descricao pronta.",
+        chapters: [{ time: "00:00", title: "Intro" }],
+        thumbnailPrompts: [
+          { conceptId: "fiz_mesmo_assim", title: "Fiz Mesmo Assim", renderText: { headline: ["FIZ"], subhead: "sub", badge: "CANAL", stamp: "18 mai", leftLabel: "ANTES", rightLabel: "DEPOIS", checklistBad: "nao gravei", checklistGood: ["gravei"], tags: ["BASTIDOR"] }, prompt: "prompt" },
+          { conceptId: "conflito_resultado", title: "Conflito", renderText: { headline: ["CONFLITO"], subhead: "sub", badge: "CANAL", stamp: "18 mai", leftLabel: "ANTES", rightLabel: "DEPOIS", checklistBad: "nao gravei", checklistGood: ["gravei"], tags: ["BASTIDOR"] }, prompt: "prompt" },
+          { conceptId: "manchete_editorial", title: "Manchete", renderText: { headline: ["MANCHETE"], subhead: "sub", badge: "CANAL", stamp: "18 mai", leftLabel: "ANTES", rightLabel: "DEPOIS", checklistBad: "nao gravei", checklistGood: ["gravei"], tags: ["BASTIDOR"] }, prompt: "prompt" },
+          { conceptId: "sistema_status", title: "Sistema", renderText: { headline: ["SISTEMA"], subhead: "sub", badge: "CANAL", stamp: "18 mai", leftLabel: "ANTES", rightLabel: "DEPOIS", checklistBad: "nao gravei", checklistGood: ["gravei"], tags: ["BASTIDOR"] }, prompt: "prompt" },
+          { conceptId: "rede_social_negocio", title: "Rede", renderText: { headline: ["REDE"], subhead: "sub", badge: "CANAL", stamp: "18 mai", leftLabel: "ANTES", rightLabel: "DEPOIS", checklistBad: "nao gravei", checklistGood: ["gravei"], tags: ["BASTIDOR"] }, prompt: "prompt" },
+        ]
+      });
+
+      const selectBestFrame = vi.fn().mockResolvedValue(0);
+      const preprocessFrame = vi.fn(async (_input: string, output: string) => {
+        await writeFile(output, "jpeg");
+      });
+      // selectIdentityPhoto returns index 0 → picks expressivo.jpg
+      const selectIdentityPhoto = vi.fn().mockResolvedValue(0);
+      // cropFaceRegion should NOT be called when identity photos are present
+      const cropFaceRegion = vi.fn();
+
+      await runYoutubePackageJob(
+        { jobId: job.id, workspace, jobs },
+        processRunner,
+        { generateYoutubePackageCopy, renderV9ThumbnailImages, selectBestFrame, preprocessFrame, selectIdentityPhoto, cropFaceRegion }
+      );
+
+      // selectIdentityPhoto was called with the photo path and the video title
+      expect(selectIdentityPhoto).toHaveBeenCalledWith(
+        [path.join(identityPhotosDir, "expressivo.jpg")],
+        "Esse Fluxo De YouTube Economiza Horas"
+      );
+      // cropFaceRegion was NOT called — identity photo bypasses face crop
+      expect(cropFaceRegion).not.toHaveBeenCalled();
+      // Job completed successfully
+      expect(jobs.get(job.id)).toMatchObject({ status: "passed", stage: "complete" });
+    });
+  });
+
   it("fails with a useful message when captions are missing", async () => {
     await withTempDir("ai-editor-youtube-package-empty-", async (dir) => {
       const workspace = await createProjectWorkspace(dir, "project_1");
