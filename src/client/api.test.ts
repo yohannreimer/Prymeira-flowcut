@@ -5,6 +5,7 @@ import {
   fetchEditPlan,
   fetchJob,
   fetchPublishReadiness,
+  fetchYoutubePackageSummary,
   fetchUploadConfig,
   generateAIMotion,
   generateCaptions,
@@ -256,6 +257,31 @@ describe("api client", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/projects/project_123/youtube-package", expect.objectContaining({
       method: "POST"
     }));
+  });
+
+  it("fetches a YouTube package summary", async () => {
+    const summary = {
+      status: "ready",
+      title: "Titulo pronto",
+      description: "Descricao pronta",
+      transcriptAvailable: true,
+      thumbnailPrompt: "Prompt de thumbnail",
+      missing: [],
+      assets: [
+        {
+          kind: "thumbnail_reference",
+          name: "thumbnail-ref-01.jpg",
+          url: "/api/projects/project_123/youtube-package/assets/thumbnail-ref-01.jpg"
+        }
+      ]
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ summary }), {
+      headers: { "content-type": "application/json" }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchYoutubePackageSummary("project_123")).resolves.toEqual(summary);
+    expect(fetchMock).toHaveBeenCalledWith("/api/projects/project_123/youtube-package/summary", { signal: undefined });
   });
 
   it("turns browser network failures into a useful local API message", async () => {

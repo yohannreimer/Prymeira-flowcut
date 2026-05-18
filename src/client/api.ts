@@ -33,6 +33,20 @@ export type UploadConfig = {
   uploadFileSizeLimitBytes: number;
 };
 
+export type YoutubePackageSummary = {
+  status: "missing" | "incomplete" | "ready";
+  title: string | null;
+  description: string | null;
+  transcriptAvailable: boolean;
+  thumbnailPrompt: string | null;
+  missing: string[];
+  assets: Array<{
+    kind: "thumbnail_reference" | "identity_clip" | "generated_thumbnail";
+    name: string;
+    url: string;
+  }>;
+};
+
 export type EditPlanSummary = {
   projectId: string;
   sourceUrl: string;
@@ -202,6 +216,18 @@ export async function generateYoutubePackage(projectId: string): Promise<Project
   if (!response.ok) throw new Error(await readErrorMessage(response));
   const data = await response.json();
   return data.job;
+}
+
+export async function fetchYoutubePackageSummary(
+  projectId: string,
+  options: FetchOptions = {}
+): Promise<YoutubePackageSummary> {
+  const response = await request(`/api/projects/${encodeURIComponent(projectId)}/youtube-package/summary`, {
+    signal: options.signal
+  });
+  if (!response.ok) throw new Error(await readErrorMessage(response));
+  const data = await response.json();
+  return data.summary;
 }
 
 export type UpdateCaptionInput = {
