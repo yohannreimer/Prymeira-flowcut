@@ -17,6 +17,23 @@
   --font-display: "Area Normal", "Aptos Display", "SF Pro Display", "Segoe UI Variable", Inter, system-ui, sans-serif;
   --shadow-low: 0 12px 30px rgba(23, 23, 22, 0.08);
   --shadow-medium: 0 24px 70px rgba(23, 23, 22, 0.16);
+  /* ── Dark shell tokens ── */
+  --shell-bg: #0a0a09;
+  --shell-sidebar: #111110;
+  --shell-main: #161614;
+  --shell-surface: #1a1a18;
+  --shell-border: #1e1e1c;
+  --shell-border-soft: #252523;
+  --shell-muted: #3a3a38;
+  --shell-gold: #fcc009;
+  --shell-gold-dim: rgba(252, 192, 9, 0.1);
+  --shell-gold-border: rgba(252, 192, 9, 0.35);
+  --shell-blue: #509ad4;
+  --shell-blue-dim: rgba(80, 154, 212, 0.1);
+  --shell-blue-border: rgba(80, 154, 212, 0.3);
+  --shell-green: #4caf7d;
+  --shell-green-dim: rgba(76, 175, 125, 0.1);
+  --shell-green-border: rgba(76, 175, 125, 0.2);
   color: var(--ink);
   background: var(--paper);
   font-family: var(--font-sans);
@@ -2854,4 +2871,35 @@ textarea:focus-visible {
   .button-link {
     width: 100%;
   }
+}
+
+/* ── Guided shell layout ── */
+.guided-shell-root {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--shell-bg);
+}
+.guided-shell-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--shell-sidebar);
+  border-right: 1px solid var(--shell-border);
+  display: flex;
+  flex-direction: column;
+}
+.guided-shell-main {
+  flex: 1;
+  background: var(--shell-main);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+@keyframes shell-shimmer {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.85; }
+}
+@keyframes shell-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
