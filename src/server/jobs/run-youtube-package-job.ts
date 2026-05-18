@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Caption, EditPlan } from "../../shared/edit-plan";
 import { editPlanSchema } from "../../shared/edit-plan";
@@ -279,6 +279,9 @@ async function extractReferenceFrames(
         const selectIdentityPhotoFn = deps.selectIdentityPhoto ?? selectIdentityPhoto;
         const selectedIdx = await selectIdentityPhotoFn(identityPhotoPaths, videoTitle);
         const identityPhoto = identityPhotoPaths[selectedIdx] ?? identityPhotoPaths[0]!;
+        // preprocessFrame applies colour normalisation and sharpening tuned for video frames.
+        // Identity photos are already high-quality so the effect is mild, but keeps the
+        // output format and colour grading consistent with the other ref images.
         await preprocessFn(identityPhoto, outputPath);
       } else {
         // No library: extract face from video frame (original behavior)
@@ -378,7 +381,6 @@ async function resolveIdentityPhotos(
   workspaceRoot: string,
   projectRoot: string
 ): Promise<string[]> {
-  const { readdir } = await import("node:fs/promises");
   const SUPPORTED = new Set([".jpg", ".jpeg", ".png"]);
   const candidates = [
     path.join(projectRoot, "identity-photos"),
