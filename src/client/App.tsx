@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   CAPTION_DISPLAY_MODE_OPTIONS,
   CAPTION_FONT_OPTIONS,
@@ -17,6 +17,7 @@ import {
   fetchEditPlan,
   fetchJob,
   fetchPublishReadiness,
+  fetchYoutubePackageSummary,
   fetchUploadConfig,
   deleteProject,
   formatBytes,
@@ -29,6 +30,7 @@ import {
   type EditPlanSummary,
   type ProjectJob,
   type UploadConfig,
+  type YoutubePackageSummary,
   updateCaption,
   updateCaptionSettings,
   updateSection,
@@ -112,6 +114,9 @@ export function App() {
   const [isGeneratingYoutubePackage, setIsGeneratingYoutubePackage] = useState(false);
   const [exportJob, setExportJob] = useState<ProjectJob | null>(null);
   const [youtubePackageJob, setYoutubePackageJob] = useState<ProjectJob | null>(null);
+  const [youtubePackageSummary, setYoutubePackageSummary] = useState<YoutubePackageSummary | null>(null);
+  const [selectedPackageAssetName, setSelectedPackageAssetName] = useState<string | null>(null);
+  const [isAdvancedEditorOpen, setIsAdvancedEditorOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const compareBeforeRef = useRef<HTMLVideoElement | null>(null);
   const compareAfterRef = useRef<HTMLVideoElement | null>(null);
@@ -254,6 +259,17 @@ export function App() {
   }, [youtubePackageJob]);
 
   useEffect(() => {
+    const projectId = job?.projectId;
+    if (!projectId) {
+      setYoutubePackageSummary(null);
+      setSelectedPackageAssetName(null);
+      return;
+    }
+    if (!editPlan?.captions.length && !youtubePackageJob) return;
+    void refreshYoutubePackageSummary(projectId);
+  }, [editPlan?.captions.length, job?.projectId, youtubePackageJob?.status, youtubePackageJob?.updatedAt]);
+
+  useEffect(() => {
     if (!job || !["passed", "warning"].includes(job.status)) return;
     setIsCaptioning(false);
     setIsPlanningMotion(false);
@@ -291,8 +307,33 @@ export function App() {
     void refreshPublishReadiness();
   }, [activeWorkspaceTab, editPlan?.projectId, job?.projectId]);
 
-  async function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
+  function resetForSelectedFile(nextFile: File | null) {
+    setError(null);
+    setJob(null);
+    setEditPlan(null);
+    setKnownCuts([]);
+    setActiveCutIds([]);
+    setSelectedCutId(null);
+    setPreviewCutId(null);
+    setSelectedSectionId(null);
+    setSectionFilter("all");
+    setMusicPath(null);
+    setColorPresetId("neutral");
+    setColorAdjustments(DEFAULT_COLOR_ADJUSTMENTS);
+    setAudioCleanup(false);
+    setAudioDucking(false);
+    setExportJob(null);
+    setYoutubePackageJob(null);
+    setYoutubePackageSummary(null);
+    setSelectedPackageAssetName(null);
+    setIsGeneratingYoutubePackage(false);
+    setCaptionSettings(DEFAULT_CAPTION_SETTINGS);
+    setCaptionStyleId(DEFAULT_CAPTION_STYLE_ID);
+    setActiveWorkspaceTab("review");
+    setFile(nextFile);
+  }
+
+  async function startUpload() {
     if (!file) return;
     setError(null);
     setIsUploading(true);
@@ -311,6 +352,11 @@ export function App() {
       setIsUploading(false);
       setUploadStartedAt(null);
     }
+  }
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    await startUpload();
   }
 
   async function onManualRerender(options: {
@@ -407,11 +453,27 @@ export function App() {
     if (!projectId) return;
     try {
       const publishReadiness = await fetchPublishReadiness(projectId);
-      if (activeProjectIdRef.current !== projectId) return;
+      if (activeProjectIdRef.current && activeProjectIdRef.current !== projectId) return;
       setEditPlan((plan) => plan?.projectId === projectId ? { ...plan, publishReadiness } : plan);
     } catch (err) {
       const detail = err instanceof Error ? `: ${err.message}` : "";
       setError(`Falha ao atualizar checklist de publicação${detail}`);
+    }
+  }
+
+  async function refreshYoutubePackageSummary(projectId = job?.projectId) {
+    if (!projectId) return;
+    try {
+      const summary = await fetchYoutubePackageSummary(projectId);
+      if (activeProjectIdRef.current && activeProjectIdRef.current !== projectId) return;
+      setYoutubePackageSummary(summary);
+      setSelectedPackageAssetName((currentName) => {
+        if (currentName && summary.assets.some((asset) => asset.name === currentName)) return currentName;
+        return summary.assets[0]?.name ?? null;
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? `: ${err.message}` : "";
+      setError(`Falha ao carregar pacote YouTube${detail}`);
     }
   }
 
@@ -432,6 +494,8 @@ export function App() {
         setPreviewCutId(null);
         setExportJob(null);
         setYoutubePackageJob(null);
+        setYoutubePackageSummary(null);
+        setSelectedPackageAssetName(null);
         setIsExporting(false);
         setIsGeneratingYoutubePackage(false);
       }
@@ -457,6 +521,8 @@ export function App() {
       setPreviewCutId(null);
       setExportJob(null);
       setYoutubePackageJob(null);
+      setYoutubePackageSummary(null);
+      setSelectedPackageAssetName(null);
       setIsExporting(false);
       setIsGeneratingYoutubePackage(false);
       setCaptionSettings(plan.captionSettings);
@@ -479,6 +545,7 @@ export function App() {
         createdAt: now,
         updatedAt: now
       });
+      void refreshYoutubePackageSummary(project.id);
       setActiveWorkspaceTab("review");
       window.history.replaceState(null, "", `?projectId=${encodeURIComponent(project.id)}`);
     } catch (err) {
@@ -545,6 +612,8 @@ export function App() {
     }
     setError(null);
     setIsGeneratingYoutubePackage(true);
+    setYoutubePackageSummary(null);
+    setSelectedPackageAssetName(null);
     try {
       const nextJob = await generateYoutubePackage(job.projectId);
       setYoutubePackageJob(nextJob);
@@ -766,10 +835,10 @@ export function App() {
     <main className="app-shell">
       <section className="topbar">
         <div className="brand-lockup">
-          <span className="brand-mark">AI</span>
+          <span className="brand-mark">MF</span>
           <div>
-            <p className="eyebrow">Editor agêntico local</p>
-            <h1>AI First YouTube Editor</h1>
+            <p className="eyebrow">MediaFactory SaaS</p>
+            <h1>Publicador de vídeos com IA</h1>
           </div>
         </div>
         <div className="topbar-status">
@@ -778,6 +847,33 @@ export function App() {
         </div>
       </section>
 
+      <GuidedSaasFlow
+        file={file}
+        job={job}
+        editPlan={editPlan}
+        youtubePackageSummary={youtubePackageSummary}
+        selectedAssetName={selectedPackageAssetName}
+        isUploading={isUploading}
+        isCaptioning={isCaptioning}
+        isGeneratingYoutubePackage={isGeneratingYoutubePackage}
+        youtubePackageJob={youtubePackageJob}
+        fileLimitBytes={fileLimitBytes}
+        isFileTooLarge={Boolean(isFileTooLarge)}
+        error={error}
+        onFileSelected={resetForSelectedFile}
+        onStartUpload={() => void startUpload()}
+        onGenerateCaptions={() => void onGenerateCaptions()}
+        onGenerateYoutubePackage={() => void onGenerateYoutubePackage()}
+        onReviewPublish={() => {
+          setActiveWorkspaceTab("export");
+          setIsAdvancedEditorOpen(true);
+        }}
+        onSelectAsset={setSelectedPackageAssetName}
+        isAdvancedEditorOpen={isAdvancedEditorOpen}
+        onToggleAdvanced={() => setIsAdvancedEditorOpen((value) => !value)}
+      />
+
+      {isAdvancedEditorOpen ? (
       <section className="studio">
         <aside className="left-rail">
           <div className="rail-section">
@@ -787,32 +883,10 @@ export function App() {
                 <span>{file ? file.name : "Escolher arquivo de vídeo"}</span>
                 <small>MOV, MP4 e gravações de tela</small>
                 <input
-                  type="file"
-                  accept={VIDEO_FILE_INPUT_ACCEPT}
-                  onChange={(event) => {
-                    setError(null);
-                    setJob(null);
-                    setEditPlan(null);
-                    setKnownCuts([]);
-                    setActiveCutIds([]);
-                    setSelectedCutId(null);
-                    setPreviewCutId(null);
-                    setSelectedSectionId(null);
-                    setSectionFilter("all");
-                    setMusicPath(null);
-                    setColorPresetId("neutral");
-                    setColorAdjustments(DEFAULT_COLOR_ADJUSTMENTS);
-                    setAudioCleanup(false);
-                    setAudioDucking(false);
-                    setExportJob(null);
-                    setYoutubePackageJob(null);
-                    setIsGeneratingYoutubePackage(false);
-                    setCaptionSettings(DEFAULT_CAPTION_SETTINGS);
-                    setCaptionStyleId(DEFAULT_CAPTION_STYLE_ID);
-                    setActiveWorkspaceTab("review");
-                    setFile(event.currentTarget.files?.[0] ?? null);
-                  }}
-                />
+	                  type="file"
+	                  accept={VIDEO_FILE_INPUT_ACCEPT}
+	                  onChange={(event) => resetForSelectedFile(event.currentTarget.files?.[0] ?? null)}
+	                />
               </label>
               <div className="draft-setup">
                 <p className="section-label">Antes do rascunho</p>
@@ -1275,7 +1349,243 @@ export function App() {
           ) : null}
         </aside>
       </section>
+      ) : null}
     </main>
+  );
+}
+
+type GuidedSaasFlowProps = {
+  file: File | null;
+  job: ProjectJob | null;
+  editPlan: EditPlanSummary | null;
+  youtubePackageSummary: YoutubePackageSummary | null;
+  selectedAssetName: string | null;
+  isUploading: boolean;
+  isCaptioning: boolean;
+  isGeneratingYoutubePackage: boolean;
+  youtubePackageJob: ProjectJob | null;
+  fileLimitBytes: number | undefined;
+  isFileTooLarge: boolean;
+  error: string | null;
+  isAdvancedEditorOpen: boolean;
+  onFileSelected: (file: File | null) => void;
+  onStartUpload: () => void;
+  onGenerateCaptions: () => void;
+  onGenerateYoutubePackage: () => void;
+  onReviewPublish: () => void;
+  onSelectAsset: (assetName: string) => void;
+  onToggleAdvanced: () => void;
+};
+
+function GuidedSaasFlow({
+  file,
+  job,
+  editPlan,
+  youtubePackageSummary,
+  selectedAssetName,
+  isUploading,
+  isCaptioning,
+  isGeneratingYoutubePackage,
+  youtubePackageJob,
+  fileLimitBytes,
+  isFileTooLarge,
+  error,
+  isAdvancedEditorOpen,
+  onFileSelected,
+  onStartUpload,
+  onGenerateCaptions,
+  onGenerateYoutubePackage,
+  onReviewPublish,
+  onSelectAsset,
+  onToggleAdvanced
+}: GuidedSaasFlowProps) {
+  const hasCut = Boolean(job?.outputUrl);
+  const hasCaptions = Boolean(editPlan?.captions.length);
+  const hasPackage = youtubePackageSummary?.status === "ready";
+  const isCutRunning = Boolean(job && isActiveJob(job));
+  const isPackageRunning = Boolean(youtubePackageJob && isActiveJob(youtubePackageJob));
+  const selectedAsset = youtubePackageSummary?.assets.find((asset) => asset.name === selectedAssetName)
+    ?? youtubePackageSummary?.assets[0]
+    ?? null;
+  const packageIssue = youtubePackageSummary?.status === "incomplete"
+    ? `Faltando: ${youtubePackageSummary.missing.join(", ")}`
+    : null;
+
+  const steps: Array<{ label: string; detail: string; state: "done" | "active" | "waiting" | "failed" }> = [
+    {
+      label: "Upload",
+      detail: file ? file.name : job ? job.projectId : "Aguardando vídeo",
+      state: file || job ? "done" : "active"
+    },
+    {
+      label: "Corte",
+      detail: hasCut ? "Rascunho pronto" : isCutRunning || isUploading ? "Processando" : "Próximo passo",
+      state: job?.status === "failed" ? "failed" : hasCut ? "done" : file || job || isUploading ? "active" : "waiting"
+    },
+    {
+      label: "IA",
+      detail: hasCaptions ? `${editPlan?.captions.length ?? 0} legendas` : isCaptioning ? "Transcrevendo" : "Legenda e copy",
+      state: hasCaptions ? "done" : hasCut ? "active" : "waiting"
+    },
+    {
+      label: "Thumbnail",
+      detail: youtubePackageSummary?.assets.length ? `${youtubePackageSummary.assets.length} referências` : "Ideias e assets",
+      state: hasPackage ? "done" : hasCaptions || isPackageRunning ? "active" : "waiting"
+    },
+    {
+      label: "Revisão",
+      detail: hasPackage ? "Pacote pronto" : "Antes de publicar",
+      state: hasPackage ? "active" : "waiting"
+    },
+    {
+      label: "Publicação",
+      detail: "YouTube conectado depois",
+      state: "waiting"
+    }
+  ];
+
+  let action: ReactNode;
+  if (!file && !job) {
+    action = (
+      <label className="saas-primary-action">
+        Enviar vídeo
+        <input
+          type="file"
+          accept={VIDEO_FILE_INPUT_ACCEPT}
+          onChange={(event) => onFileSelected(event.currentTarget.files?.[0] ?? null)}
+        />
+      </label>
+    );
+  } else if (file && !job) {
+    action = (
+      <button type="button" className="saas-primary-action" onClick={onStartUpload} disabled={isUploading || isFileTooLarge}>
+        {isUploading ? "Enviando..." : "Gerar corte"}
+      </button>
+    );
+  } else if (hasCut && !hasCaptions) {
+    action = (
+      <button type="button" className="saas-primary-action" onClick={onGenerateCaptions} disabled={isCaptioning}>
+        {isCaptioning ? "Gerando IA..." : "Gerar transcrição e captions"}
+      </button>
+    );
+  } else if (hasCaptions && !hasPackage) {
+    action = (
+      <button
+        type="button"
+        className="saas-primary-action"
+        onClick={onGenerateYoutubePackage}
+        disabled={isGeneratingYoutubePackage || isPackageRunning}
+      >
+        {isGeneratingYoutubePackage || isPackageRunning ? "Montando pacote..." : "Gerar pacote YouTube"}
+      </button>
+    );
+  } else if (hasPackage) {
+    action = (
+      <button type="button" className="saas-primary-action" onClick={onReviewPublish}>
+        Revisar publicação
+      </button>
+    );
+  } else {
+    action = <button type="button" className="saas-primary-action" disabled>Processando corte</button>;
+  }
+
+  return (
+    <section className="saas-flow" aria-label="Fluxo principal do MediaFactory">
+      <div className="saas-flow-main">
+        <div className="saas-copy">
+          <p className="eyebrow">Fluxo principal</p>
+          <h2>Do vídeo bruto ao pacote pronto para YouTube.</h2>
+          <p>
+            Envie o arquivo, gere o corte horizontal, deixe a IA preparar transcrição, título, descrição e referências
+            de thumbnail, depois revise antes de publicar.
+          </p>
+        </div>
+        <div className="saas-action-block">
+          {action}
+          <button type="button" className="ghost-button" onClick={onToggleAdvanced}>
+            {isAdvancedEditorOpen ? "Ocultar editor avançado" : "Abrir editor avançado"}
+          </button>
+          {file ? (
+            <small>
+              {formatBytes(file.size)}
+              {fileLimitBytes !== undefined ? ` de ${formatBytes(fileLimitBytes)} max.` : ""}
+            </small>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="saas-steps" role="list">
+        {steps.map((step, index) => (
+          <div className={`saas-step saas-step-${step.state}`} role="listitem" key={step.label}>
+            <span>{index + 1}</span>
+            <strong>{step.label}</strong>
+            <small>{step.detail}</small>
+          </div>
+        ))}
+      </div>
+
+      {error || isFileTooLarge || packageIssue ? (
+        <div className="saas-alert">
+          {isFileTooLarge ? <span>Arquivo acima do limite configurado.</span> : null}
+          {packageIssue ? <span>{packageIssue}</span> : null}
+          {error ? <span>{error}</span> : null}
+        </div>
+      ) : null}
+
+      <div className="saas-review-grid">
+        <div className="saas-preview">
+          {job?.outputUrl ? (
+            <video src={appendMediaCacheBust(job.outputUrl, `${job.id}-${job.updatedAt}`) ?? job.outputUrl} controls playsInline />
+          ) : (
+            <div className="saas-preview-empty">
+              <strong>Sem corte ainda</strong>
+              <span>O primeiro MP4 aparece aqui quando o render terminar.</span>
+            </div>
+          )}
+        </div>
+
+        <div className="saas-package-panel">
+          <div>
+            <p className="section-label">Pacote YouTube</p>
+            <h3>{youtubePackageSummary?.title ?? "Título gerado aparece aqui"}</h3>
+          </div>
+          <p>{youtubePackageSummary?.description ?? "A descrição e o prompt de thumbnail ficam disponíveis depois da etapa de IA."}</p>
+          <div className="saas-package-facts">
+            <span>{hasCaptions ? "Transcrição pronta" : "Sem transcrição"}</span>
+            <span>{youtubePackageSummary?.thumbnailPrompt ? "Prompt de thumbnail pronto" : "Prompt pendente"}</span>
+            <span>{hasPackage ? "Revisão liberada" : "Pacote pendente"}</span>
+          </div>
+          {youtubePackageSummary?.thumbnailPrompt ? (
+            <details className="saas-prompt">
+              <summary>Ver prompt de thumbnail</summary>
+              <pre>{youtubePackageSummary.thumbnailPrompt}</pre>
+            </details>
+          ) : null}
+          {youtubePackageSummary?.assets.length ? (
+            <div className="saas-assets">
+              {youtubePackageSummary.assets.map((asset) => (
+                <button
+                  type="button"
+                  className={asset.name === selectedAsset?.name ? "saas-asset saas-asset-selected" : "saas-asset"}
+                  key={asset.name}
+                  onClick={() => onSelectAsset(asset.name)}
+                >
+                  {asset.kind === "identity_clip" ? (
+                    <span className="saas-asset-video">MP4</span>
+                  ) : (
+                    <img src={asset.url} alt={asset.name} />
+                  )}
+                  <small>{asset.name}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <button type="button" className="saas-publish-disabled" disabled>
+            Publicar no YouTube após conectar conta
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 
