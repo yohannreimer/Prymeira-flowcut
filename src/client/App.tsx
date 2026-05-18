@@ -113,6 +113,7 @@ export function App() {
   const [isPlanningMotion, setIsPlanningMotion] = useState(false);
   const [isGeneratingYoutubePackage, setIsGeneratingYoutubePackage] = useState(false);
   const [exportJob, setExportJob] = useState<ProjectJob | null>(null);
+  const [captionJob, setCaptionJob] = useState<ProjectJob | null>(null);
   const [youtubePackageJob, setYoutubePackageJob] = useState<ProjectJob | null>(null);
   const [youtubePackageSummary, setYoutubePackageSummary] = useState<YoutubePackageSummary | null>(null);
   const [selectedPackageAssetName, setSelectedPackageAssetName] = useState<string | null>(null);
@@ -129,10 +130,10 @@ export function App() {
   }, [job?.projectId]);
 
   useEffect(() => {
-    if (!isUploading && !isActiveJob(job) && !isActiveJob(exportJob) && !isActiveJob(youtubePackageJob)) return;
+    if (!isUploading && !isActiveJob(job) && !isActiveJob(exportJob) && !isActiveJob(captionJob) && !isActiveJob(youtubePackageJob)) return;
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [exportJob, isUploading, job, youtubePackageJob]);
+  }, [captionJob, exportJob, isUploading, job, youtubePackageJob]);
 
   useEffect(() => {
     let isStale = false;
@@ -237,6 +238,54 @@ export function App() {
   }, [exportJob]);
 
   useEffect(() => {
+    if (!captionJob || ["passed", "warning", "failed"].includes(captionJob.status)) {
+      return;
+    }
+    let isStale = false;
+    const controller = new AbortController();
+    const timer = window.setInterval(async () => {
+      try {
+        const nextJob = await fetchJob(captionJob.id, { signal: controller.signal });
+        if (!isStale) setCaptionJob(nextJob);
+      } catch (err) {
+        if (isStale || (err instanceof DOMException && err.name === "AbortError")) return;
+        setError(err instanceof Error ? err.message : "Falha ao atualizar legendas");
+      }
+    }, 1000);
+    return () => {
+      isStale = true;
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [captionJob]);
+
+  useEffect(() => {
+    if (!captionJob || !["passed", "warning", "failed"].includes(captionJob.status)) return;
+    setIsCaptioning(false);
+    if (captionJob.status === "failed") {
+      setError(captionJob.error ?? "Falha ao gerar legendas com Whisper");
+      return;
+    }
+    let isStale = false;
+    const controller = new AbortController();
+    fetchEditPlan(captionJob.projectId, { signal: controller.signal })
+      .then((plan) => {
+        if (isStale) return;
+        setEditPlan(plan);
+        setCaptionSettings(plan.captionSettings);
+        setCaptionStyleId(plan.captionSettings.styleId ?? (plan.captions[0]?.styleId as CaptionStyleId | undefined) ?? DEFAULT_CAPTION_STYLE_ID);
+      })
+      .catch((err) => {
+        if (isStale || (err instanceof DOMException && err.name === "AbortError")) return;
+        setError(err instanceof Error ? err.message : "Falha ao carregar legendas geradas");
+      });
+    return () => {
+      isStale = true;
+      controller.abort();
+    };
+  }, [captionJob]);
+
+  useEffect(() => {
     if (!youtubePackageJob || ["passed", "warning", "failed"].includes(youtubePackageJob.status)) {
       return;
     }
@@ -323,6 +372,7 @@ export function App() {
     setAudioCleanup(false);
     setAudioDucking(false);
     setExportJob(null);
+    setCaptionJob(null);
     setYoutubePackageJob(null);
     setYoutubePackageSummary(null);
     setSelectedPackageAssetName(null);
@@ -429,7 +479,7 @@ export function App() {
     setIsCaptioning(true);
     try {
       const nextJob = await generateCaptions(job.projectId, { captionStyleId: captionSettings.styleId });
-      setJob(nextJob);
+      setCaptionJob(nextJob);
       setActiveWorkspaceTab("captions");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao gerar legendas com Whisper");
@@ -493,6 +543,7 @@ export function App() {
         setSelectedSectionId(null);
         setPreviewCutId(null);
         setExportJob(null);
+        setCaptionJob(null);
         setYoutubePackageJob(null);
         setYoutubePackageSummary(null);
         setSelectedPackageAssetName(null);
@@ -520,6 +571,7 @@ export function App() {
       setSectionFilter("all");
       setPreviewCutId(null);
       setExportJob(null);
+      setCaptionJob(null);
       setYoutubePackageJob(null);
       setYoutubePackageSummary(null);
       setSelectedPackageAssetName(null);
@@ -855,6 +907,7 @@ export function App() {
         selectedAssetName={selectedPackageAssetName}
         isUploading={isUploading}
         isCaptioning={isCaptioning}
+        captionJob={captionJob}
         isGeneratingYoutubePackage={isGeneratingYoutubePackage}
         youtubePackageJob={youtubePackageJob}
         fileLimitBytes={fileLimitBytes}
@@ -1362,6 +1415,7 @@ type GuidedSaasFlowProps = {
   selectedAssetName: string | null;
   isUploading: boolean;
   isCaptioning: boolean;
+  captionJob: ProjectJob | null;
   isGeneratingYoutubePackage: boolean;
   youtubePackageJob: ProjectJob | null;
   fileLimitBytes: number | undefined;
@@ -1385,6 +1439,7 @@ function GuidedSaasFlow({
   selectedAssetName,
   isUploading,
   isCaptioning,
+  captionJob,
   isGeneratingYoutubePackage,
   youtubePackageJob,
   fileLimitBytes,
@@ -1403,6 +1458,7 @@ function GuidedSaasFlow({
   const hasCaptions = Boolean(editPlan?.captions.length);
   const hasPackage = youtubePackageSummary?.status === "ready";
   const isCutRunning = Boolean(job && isActiveJob(job));
+  const isCaptionJobRunning = Boolean(captionJob && isActiveJob(captionJob));
   const isPackageRunning = Boolean(youtubePackageJob && isActiveJob(youtubePackageJob));
   const selectedAsset = youtubePackageSummary?.assets.find((asset) => asset.name === selectedAssetName)
     ?? youtubePackageSummary?.assets[0]
@@ -1424,8 +1480,14 @@ function GuidedSaasFlow({
     },
     {
       label: "IA",
-      detail: hasCaptions ? `${editPlan?.captions.length ?? 0} legendas` : isCaptioning ? "Transcrevendo" : "Legenda e copy",
-      state: hasCaptions ? "done" : hasCut ? "active" : "waiting"
+      detail: hasCaptions
+        ? `${editPlan?.captions.length ?? 0} legendas`
+        : captionJob?.status === "failed"
+          ? "Falha na transcrição"
+          : isCaptioning || isCaptionJobRunning
+            ? "Transcrevendo"
+            : "Legenda e copy",
+      state: captionJob?.status === "failed" ? "failed" : hasCaptions ? "done" : hasCut ? "active" : "waiting"
     },
     {
       label: "Thumbnail",
@@ -1464,8 +1526,8 @@ function GuidedSaasFlow({
     );
   } else if (hasCut && !hasCaptions) {
     action = (
-      <button type="button" className="saas-primary-action" onClick={onGenerateCaptions} disabled={isCaptioning}>
-        {isCaptioning ? "Gerando IA..." : "Gerar transcrição e captions"}
+      <button type="button" className="saas-primary-action" onClick={onGenerateCaptions} disabled={isCaptioning || isCaptionJobRunning}>
+        {isCaptioning || isCaptionJobRunning ? "Gerando IA..." : "Gerar transcrição e captions"}
       </button>
     );
   } else if (hasCaptions && !hasPackage) {
