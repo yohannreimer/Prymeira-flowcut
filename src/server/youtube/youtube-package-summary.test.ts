@@ -14,6 +14,7 @@ describe("readYoutubePackageSummary", () => {
     await writeFile(path.join(packageDir, "transcricao.txt"), "[00:00 - 00:01] Oi\n");
     await writeFile(path.join(packageDir, "prompt-thumbnail.txt"), "VARIACAO 1\n\nPrompt A\n");
     await writeFile(path.join(packageDir, "thumbnail-ref-01.jpg"), "jpg");
+    await writeFile(path.join(packageDir, "thumbnail-generated-01.png"), "png");
     await writeFile(path.join(packageDir, "identity-ref-01.mp4"), "mp4");
 
     await expect(readYoutubePackageSummary(root, "project_abc")).resolves.toEqual({
@@ -28,6 +29,11 @@ describe("readYoutubePackageSummary", () => {
           kind: "identity_clip",
           name: "identity-ref-01.mp4",
           url: "/api/projects/project_abc/youtube-package/assets/identity-ref-01.mp4"
+        },
+        {
+          kind: "generated_thumbnail",
+          name: "thumbnail-generated-01.png",
+          url: "/api/projects/project_abc/youtube-package/assets/thumbnail-generated-01.png"
         },
         {
           kind: "thumbnail_reference",

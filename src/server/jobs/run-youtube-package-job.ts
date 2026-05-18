@@ -1,8 +1,9 @@
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Caption, EditPlan } from "../../shared/edit-plan";
 import { editPlanSchema } from "../../shared/edit-plan";
 import { getConfig } from "../config";
+import { generateYouTubeThumbnails as defaultGenerateYouTubeThumbnails } from "../media-factory/thumbnail";
 import { runProcess } from "../media/process";
 import type { ProcessOptions, ProcessResult } from "../media/process";
 import type { ProjectWorkspace } from "../workspace";
@@ -24,6 +25,7 @@ export type RunYoutubePackageJobInput = {
 
 export type RunYoutubePackageJobDeps = {
   generateYoutubePackageCopy?: typeof generateYoutubePackageCopy;
+  generateYouTubeThumbnails?: typeof defaultGenerateYouTubeThumbnails;
 };
 
 const FRAME_COUNT = 4;
@@ -36,6 +38,7 @@ export async function runYoutubePackageJob(
   deps: RunYoutubePackageJobDeps = {}
 ) {
   const copyGenerator = deps.generateYoutubePackageCopy ?? generateYoutubePackageCopy;
+  const thumbnailGenerator = deps.generateYouTubeThumbnails ?? defaultGenerateYouTubeThumbnails;
   let packageDir: string | null = null;
 
   try {
@@ -69,6 +72,22 @@ export async function runYoutubePackageJob(
     const copy = await copyGenerator(plan, transcript);
     await writeCopyFiles(packageDir, copy);
 
+    const sourcePath = await pickFrameSource(input.workspace, plan.source.path);
+    input.jobs.update(input.jobId, {
+      status: "running",
+      stage: "youtube_package_thumbnails",
+      message: "Rendering YouTube thumbnail options",
+      outputPath: packageDir,
+      planPath: input.workspace.planPath
+    });
+    await renderGeneratedThumbnailOptions({
+      packageDir,
+      sourcePath,
+      title: copy.title,
+      durationSec: getRenderedDurationSec(plan),
+      generateYouTubeThumbnails: thumbnailGenerator
+    });
+
     input.jobs.update(input.jobId, {
       status: "running",
       stage: "youtube_package_frames",
@@ -76,8 +95,6 @@ export async function runYoutubePackageJob(
       outputPath: packageDir,
       planPath: input.workspace.planPath
     });
-
-    const sourcePath = await pickFrameSource(input.workspace, plan.source.path);
     await extractReferenceFrames(plan, sourcePath, packageDir, processRunner);
     await extractIdentityClips(plan, sourcePath, packageDir, processRunner);
 
@@ -109,6 +126,10 @@ function captionsToTranscriptText(captions: Caption[]) {
     .join("\n");
 }
 
+function getRenderedDurationSec(plan: EditPlan) {
+  return plan.segments.at(-1)?.timelineEndSec ?? plan.source.durationSec;
+}
+
 async function writeCopyFiles(packageDir: string, copy: YoutubePackageCopy) {
   await Promise.all([
     writeFile(path.join(packageDir, "titulo.txt"), `${copy.title.trim()}\n`),
@@ -136,6 +157,33 @@ function formatThumbnailPrompts(prompts: string[], promptWithoutFace: string) {
 async function pickFrameSource(workspace: ProjectWorkspace, fallbackSourcePath: string) {
   const roughCutPath = path.join(workspace.renders, "rough-cut.mp4");
   return access(roughCutPath).then(() => roughCutPath, () => fallbackSourcePath);
+}
+
+async function renderGeneratedThumbnailOptions({
+  packageDir,
+  sourcePath,
+  title,
+  durationSec,
+  generateYouTubeThumbnails
+}: {
+  packageDir: string;
+  sourcePath: string;
+  title: string;
+  durationSec: number;
+  generateYouTubeThumbnails: typeof defaultGenerateYouTubeThumbnails;
+}) {
+  const result = await generateYouTubeThumbnails({
+    videoPath: sourcePath,
+    outputDir: packageDir,
+    title,
+    durationSec
+  });
+  await Promise.all(result.options.map((option, index) => (
+    copyFile(
+      path.join(packageDir, option),
+      path.join(packageDir, `thumbnail-generated-${String(index + 1).padStart(2, "0")}.png`)
+    )
+  )));
 }
 
 async function extractReferenceFrames(
