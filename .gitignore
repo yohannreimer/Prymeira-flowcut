@@ -4,6 +4,10 @@ node_modules/
 dist/
 fixtures/*.mp4
 workspace/
+
+# Creator identity photo library (personal photos, not for version control)
+identity-photos/
+
 .DS_Store
 .env
 .env.local
