@@ -242,6 +242,58 @@ describe("project routes", () => {
     });
   });
 
+  it("returns a YouTube package summary for review screens", async () => {
+    await withTempDir("ai-editor-route-youtube-summary-", async (dir) => {
+      const projectId = "project_123";
+      const packageDir = path.join(dir, projectId, "download", "youtube-package");
+      await mkdir(packageDir, { recursive: true });
+      await writeFile(path.join(packageDir, "titulo.txt"), "Titulo de alta curiosidade\n");
+      await writeFile(path.join(packageDir, "thumbnail-ref-01.jpg"), Buffer.from("jpg"));
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
+
+      const response = await request(app).get(`/api/projects/${projectId}/youtube-package/summary`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.summary).toMatchObject({
+        status: "incomplete",
+        title: "Titulo de alta curiosidade",
+        description: null,
+        transcriptAvailable: false,
+        missing: ["descricao.txt", "transcricao.txt", "prompt-thumbnail.txt"],
+        assets: [
+          {
+            kind: "thumbnail_reference",
+            name: "thumbnail-ref-01.jpg",
+            url: "/api/projects/project_123/youtube-package/assets/thumbnail-ref-01.jpg"
+          }
+        ]
+      });
+    });
+  });
+
+  it("serves only safe YouTube package assets", async () => {
+    await withTempDir("ai-editor-route-youtube-assets-", async (dir) => {
+      const projectId = "project_123";
+      const projectRoot = path.join(dir, projectId);
+      const packageDir = path.join(projectRoot, "download", "youtube-package");
+      await mkdir(packageDir, { recursive: true });
+      await writeFile(path.join(packageDir, "titulo.txt"), "Titulo\n");
+      await writeFile(path.join(packageDir, "descricao.txt"), "Descricao\n");
+      await writeFile(path.join(packageDir, "transcricao.txt"), "Transcricao\n");
+      await writeFile(path.join(packageDir, "prompt-thumbnail.txt"), "Prompt\n");
+      await writeFile(path.join(packageDir, "thumbnail-ref-01.jpg"), Buffer.from("jpg"));
+      await writeFile(path.join(projectRoot, "edit-plan.json"), "private plan");
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
+
+      const assetResponse = await request(app).get(`/api/projects/${projectId}/youtube-package/assets/thumbnail-ref-01.jpg`);
+      const traversalResponse = await request(app).get(`/api/projects/${projectId}/youtube-package/assets/%2e%2e%2fedit-plan.json`);
+
+      expect(assetResponse.status).toBe(200);
+      expect(assetResponse.body.toString("utf8")).toBe("jpg");
+      expect(traversalResponse.status).toBe(404);
+    });
+  });
+
   it("rejects invalid export settings", async () => {
     await withTempDir("ai-editor-route-", async (dir) => {
       const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });

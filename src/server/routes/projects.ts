@@ -30,6 +30,7 @@ import { runProjectJob, type RunProjectJobInput } from "../jobs/run-project-job"
 import { runYoutubePackageJob, type RunYoutubePackageJobInput } from "../jobs/run-youtube-package-job";
 import type { ProjectJob } from "../jobs/job-store";
 import { assessPublishReadiness } from "../qa/publish-readiness";
+import { isYoutubePackageAssetName, readYoutubePackageSummary } from "../youtube/youtube-package-summary";
 
 const DEFAULT_UPLOAD_FILE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024 * 1024;
 const NORMAL_EXTENSION_PATTERN = /^\.[A-Za-z0-9]{1,10}$/;
@@ -458,6 +459,48 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
+      next(error);
+    }
+  });
+
+  router.get("/:projectId/youtube-package/summary", async (req, res, next) => {
+    try {
+      const { projectId } = req.params;
+      if (!PROJECT_ID_PATTERN.test(projectId)) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const summary = await readYoutubePackageSummary(workspace.root, projectId);
+      res.json({ summary });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:projectId/youtube-package/assets/:assetName", async (req, res, next) => {
+    try {
+      const { projectId, assetName } = req.params;
+      if (!PROJECT_ID_PATTERN.test(projectId) || !isYoutubePackageAssetName(assetName)) {
+        res.status(404).json({ error: "Asset not found" });
+        return;
+      }
+
+      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const summary = await readYoutubePackageSummary(workspace.root, projectId);
+      if (!summary.assets.some((asset) => asset.name === assetName)) {
+        res.status(404).json({ error: "Asset not found" });
+        return;
+      }
+
+      const packageDir = path.join(workspace.root, "download", "youtube-package");
+      res.sendFile(path.join(packageDir, assetName), (error) => {
+        if (error && !res.headersSent) {
+          next(error);
+        }
+      });
+    } catch (error) {
       next(error);
     }
   });
