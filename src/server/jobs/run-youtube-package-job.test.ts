@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createProjectWorkspace } from "../workspace";
 import { withTempDir } from "../../test/fixtures";
 import { createJobStore } from "./job-store";
-import { runYoutubePackageJob, selectFrameTimes, selectIdentityClipRanges } from "./run-youtube-package-job";
+import { runYoutubePackageJob, selectCandidateFrameTimes, selectIdentityClipRanges } from "./run-youtube-package-job";
 
 async function writeCaptionedPlan(planPath: string, sourcePath: string) {
   await writeFile(planPath, JSON.stringify({
@@ -74,7 +74,7 @@ async function writePlanWithoutCaptions(planPath: string, sourcePath: string) {
 }
 
 describe("runYoutubePackageJob", () => {
-  it("writes YouTube copy files and extracts four reference frames plus two identity clips", async () => {
+  it("writes YouTube copy files and extracts six candidate frames plus two identity clips", async () => {
     await withTempDir("ai-editor-youtube-package-", async (dir) => {
       const workspace = await createProjectWorkspace(dir, "project_1");
       const sourcePath = path.join(workspace.uploads, "source.mp4");
@@ -86,23 +86,41 @@ describe("runYoutubePackageJob", () => {
       const jobs = createJobStore();
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
       const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const renderV9ThumbnailImages = vi.fn(async (packageDir: string) => {
+        await Promise.all([1, 2, 3, 4, 5, 6].map((index) => (
+          writeFile(path.join(packageDir, `thumbnail-generated-${String(index).padStart(2, "0")}.png`), "png")
+        )));
+      });
       const generateYoutubePackageCopy = vi.fn().mockResolvedValue({
         title: "Esse Fluxo De YouTube Economiza Horas",
         description: "Uma descricao pronta e estrategica para publicar o video com contexto, promessa e CTA natural.",
+        chapters: [
+          { time: "00:00", title: "A thumbnail precisa vender" },
+          { time: "00:30", title: "Como transformar o dia ruim" }
+        ],
         thumbnailPrompts: [
-          { conceptId: "fiz_mesmo_assim", title: "Fiz Mesmo Assim", prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao intensa, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de curiosidade focada em maximizar cliques." },
-          { conceptId: "conflito_resultado", title: "Conflito Resultado", prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao de alerta, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de erro focada em maximizar cliques." },
-          { conceptId: "manchete_editorial", title: "Manchete Editorial", prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao de resultado, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de ganho focada em maximizar cliques." },
-          { conceptId: "sistema_status", title: "Sistema Status", prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, estilo sistema/status, com checklist claro e texto grande." },
-          { conceptId: "rede_social_negocio", title: "Rede Social Negocio", prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, estilo rede social/negocio, com cards grandes e tese de atencao." }
+          { conceptId: "fiz_mesmo_assim", title: "Fiz Mesmo Assim", renderText: { headline: ["FIZ", "MESMO", "ASSIM"], subhead: "mesmo nos dias ruins", badge: "CANAL", stamp: "18 mai", leftLabel: "ANTES", rightLabel: "DEPOIS", checklistBad: "nao gravei", checklistGood: ["gravei mesmo assim", "canal criado"], tags: ["PROCESSO", "REAL", "BASTIDOR"] }, prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao intensa, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de curiosidade focada em maximizar cliques." },
+          { conceptId: "conflito_resultado", title: "Conflito Resultado", renderText: { headline: ["CONFLITO", "RESULTADO"], subhead: "do conflito ao resultado", badge: "CANAL", stamp: "18 mai", leftLabel: "ANTES", rightLabel: "DEPOIS", checklistBad: "nao gravei", checklistGood: ["gravei mesmo assim", "canal criado"], tags: ["PROCESSO", "REAL", "BASTIDOR"] }, prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao de alerta, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de erro focada em maximizar cliques." },
+          { conceptId: "manchete_editorial", title: "Manchete Editorial", renderText: { headline: ["MANCHETE", "EDITORIAL"], subhead: "editorial de resultado", badge: "CANAL", stamp: "18 mai", leftLabel: "ANTES", rightLabel: "DEPOIS", checklistBad: "nao gravei", checklistGood: ["gravei mesmo assim", "canal criado"], tags: ["PROCESSO", "REAL", "BASTIDOR"] }, prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao de resultado, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de ganho focada em maximizar cliques." },
+          { conceptId: "sistema_status", title: "Sistema Status", renderText: { headline: ["SISTEMA", "STATUS"], subhead: "sistema em execucao", badge: "CANAL", stamp: "18 mai", leftLabel: "ANTES", rightLabel: "DEPOIS", checklistBad: "nao gravei", checklistGood: ["gravei mesmo assim", "canal criado"], tags: ["PROCESSO", "REAL", "BASTIDOR"] }, prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, estilo sistema/status, com checklist claro e texto grande." },
+          { conceptId: "rede_social_negocio", title: "Rede Social Negocio", renderText: { headline: ["REDE", "SOCIAL", "NEGOCIO"], subhead: "atencao vira ativo", badge: "CANAL", stamp: "18 mai", leftLabel: "ANTES", rightLabel: "DEPOIS", checklistBad: "nao gravei", checklistGood: ["gravei mesmo assim", "canal criado"], tags: ["PROCESSO", "REAL", "BASTIDOR"] }, prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, estilo rede social/negocio, com cards grandes e tese de atencao." }
         ]
       });
+      const selectBestFrame = vi.fn().mockResolvedValue(0);
+      const preprocessFrame = vi.fn(async (_input: string, output: string) => {
+        await writeFile(output, "jpeg");
+      });
 
-      await runYoutubePackageJob({ jobId: job.id, workspace, jobs }, processRunner, { generateYoutubePackageCopy });
+      await runYoutubePackageJob(
+        { jobId: job.id, workspace, jobs },
+        processRunner,
+        { generateYoutubePackageCopy, renderV9ThumbnailImages, selectBestFrame, preprocessFrame }
+      );
 
       const packageDir = path.join(workspace.root, "download", "youtube-package");
       await expect(readFile(path.join(packageDir, "titulo.txt"), "utf8")).resolves.toContain("Economiza Horas");
       await expect(readFile(path.join(packageDir, "descricao.txt"), "utf8")).resolves.toContain("descricao pronta");
+      await expect(readFile(path.join(packageDir, "chapters.txt"), "utf8")).resolves.toContain("00:30 Como transformar o dia ruim");
       const thumbnailPrompt = await readFile(path.join(packageDir, "prompt-thumbnail.txt"), "utf8");
       expect(thumbnailPrompt).toContain("VARIACAO 1");
       expect(thumbnailPrompt).toContain("VARIACAO 2");
@@ -114,12 +132,19 @@ describe("runYoutubePackageJob", () => {
       await expect(readFile(path.join(packageDir, "transcricao.txt"), "utf8")).resolves.toContain("[0:00 - 0:02]");
       await expect(readFile(path.join(packageDir, "thumbnail-idea-01-fiz-mesmo-assim.txt"), "utf8")).resolves.toContain("VARIACAO 1");
       await expect(readFile(path.join(packageDir, "thumbnail-idea-05-rede-social-negocio.txt"), "utf8")).resolves.toContain("VARIACAO 5");
-      await expect(access(path.join(packageDir, "thumbnail-generated-01.png"))).rejects.toThrow();
+      await expect(access(path.join(packageDir, "thumbnail-generated-01.png"))).resolves.toBeUndefined();
+      await expect(access(path.join(packageDir, "thumbnail-generated-06.png"))).resolves.toBeUndefined();
       expect(generateYoutubePackageCopy).toHaveBeenCalledWith(expect.any(Object), expect.stringContaining("A thumbnail precisa vender"));
-      expect(processRunner).toHaveBeenCalledTimes(6);
-      expect(processRunner.mock.calls[0][1]).toEqual(expect.arrayContaining(["-ss", "8", "-i", roughCutPath]));
-      expect(processRunner.mock.calls[3][1]).toContain(path.join(packageDir, "thumbnail-ref-04.jpg"));
-      expect(processRunner.mock.calls[4][1]).toEqual(expect.arrayContaining([
+      expect(renderV9ThumbnailImages).toHaveBeenCalledWith(packageDir, expect.objectContaining({
+        title: "Esse Fluxo De YouTube Economiza Horas"
+      }));
+      expect(processRunner).toHaveBeenCalledTimes(8);
+      // First 6 calls are candidate frame extractions with thumbnail filter
+      expect(processRunner.mock.calls[0][1]).toEqual(
+        expect.arrayContaining(["-vf", "thumbnail=60", "-frames:v", "1"])
+      );
+      // Identity clips are calls 7 and 8
+      expect(processRunner.mock.calls[6][1]).toEqual(expect.arrayContaining([
         "-ss",
         "0.8",
         "-i",
@@ -128,7 +153,7 @@ describe("runYoutubePackageJob", () => {
         "4",
         path.join(packageDir, "identity-ref-01.mp4")
       ]));
-      expect(processRunner.mock.calls[5][1]).toEqual(expect.arrayContaining([
+      expect(processRunner.mock.calls[7][1]).toEqual(expect.arrayContaining([
         "-ss",
         "55",
         "-i",
@@ -166,13 +191,16 @@ describe("runYoutubePackageJob", () => {
     });
   });
 
-  it("selects four stable frame times across the edited duration", async () => {
+  it("selects six candidate frame times across the edited duration", async () => {
     const plan = {
       source: { durationSec: 50 },
       segments: [{ timelineEndSec: 25 }]
-    } as Parameters<typeof selectFrameTimes>[0];
+    } as Parameters<typeof selectCandidateFrameTimes>[0];
 
-    expect(selectFrameTimes(plan)).toEqual([2, 8, 14.5, 21]);
+    const times = selectCandidateFrameTimes(plan);
+    expect(times).toHaveLength(6);
+    expect(times[0]).toBeCloseTo(1.25, 0); // 0.05 * 25
+    expect(times[5]).toBeCloseTo(22, 0);   // 0.88 * 25
   });
 
   it("selects two four-second identity clips from hook and later footage", async () => {

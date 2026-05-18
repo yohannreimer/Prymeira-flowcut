@@ -6,8 +6,11 @@ import { getConfig } from "../config";
 import { runProcess } from "../media/process";
 import type { ProcessOptions, ProcessResult } from "../media/process";
 import type { ProjectWorkspace } from "../workspace";
+import { renderV9ThumbnailImages } from "../youtube/v9-thumbnail-renderer";
 import { generateYoutubePackageCopy } from "../youtube/youtube-package-copy";
 import type { YoutubePackageCopy } from "../youtube/youtube-package-copy";
+import { selectBestFrame } from "../youtube/select-best-frame";
+import { preprocessFrame } from "../youtube/preprocess-frames";
 import type { JobStore } from "./job-store";
 
 export type YoutubePackageProcessRunner = (
@@ -24,9 +27,12 @@ export type RunYoutubePackageJobInput = {
 
 export type RunYoutubePackageJobDeps = {
   generateYoutubePackageCopy?: typeof generateYoutubePackageCopy;
+  renderV9ThumbnailImages?: typeof renderV9ThumbnailImages;
+  selectBestFrame?: typeof selectBestFrame;
+  preprocessFrame?: typeof preprocessFrame;
 };
 
-const FRAME_COUNT = 4;
+const CANDIDATE_COUNT = 6;
 const FRAME_TIMEOUT_MS = 5 * 60 * 1000;
 const IDENTITY_CLIP_DURATION_SEC = 4;
 
@@ -36,6 +42,7 @@ export async function runYoutubePackageJob(
   deps: RunYoutubePackageJobDeps = {}
 ) {
   const copyGenerator = deps.generateYoutubePackageCopy ?? generateYoutubePackageCopy;
+  const thumbnailRenderer = deps.renderV9ThumbnailImages ?? renderV9ThumbnailImages;
   let packageDir: string | null = null;
 
   try {
@@ -77,8 +84,22 @@ export async function runYoutubePackageJob(
       outputPath: packageDir,
       planPath: input.workspace.planPath
     });
-    await extractReferenceFrames(plan, sourcePath, packageDir, processRunner);
+    await extractReferenceFrames(plan, sourcePath, packageDir, processRunner, {
+      selectBestFrame: deps.selectBestFrame,
+      preprocessFrame: deps.preprocessFrame,
+    });
     await extractIdentityClips(plan, sourcePath, packageDir, processRunner);
+
+    input.jobs.update(input.jobId, {
+      status: "running",
+      stage: "youtube_package_thumbnails",
+      message: "Rendering V9 thumbnail images",
+      outputPath: packageDir,
+      planPath: input.workspace.planPath
+    });
+
+    const copyWith6th = deriveBreakingNewsCopy(copy);
+    await thumbnailRenderer(packageDir, copyWith6th);
 
     input.jobs.update(input.jobId, {
       status: "passed",
@@ -118,9 +139,14 @@ async function writeCopyFiles(packageDir: string, copy: YoutubePackageCopy) {
   await Promise.all([
     writeFile(path.join(packageDir, "titulo.txt"), `${copy.title.trim()}\n`),
     writeFile(path.join(packageDir, "descricao.txt"), `${copy.description.trim()}\n`),
+    writeFile(path.join(packageDir, "chapters.txt"), formatChapters(copy.chapters)),
     writeFile(path.join(packageDir, "prompt-thumbnail.txt"), formatThumbnailPrompts(copy.thumbnailPrompts)),
     ...promptFiles
   ]);
+}
+
+function formatChapters(chapters: YoutubePackageCopy["chapters"]) {
+  return `${chapters.map((chapter) => `${chapter.time.trim()} ${chapter.title.trim()}`).join("\n")}\n`;
 }
 
 const THUMBNAIL_IDEA_SLUGS = [
@@ -149,36 +175,90 @@ async function pickFrameSource(workspace: ProjectWorkspace, fallbackSourcePath: 
   return access(roughCutPath).then(() => roughCutPath, () => fallbackSourcePath);
 }
 
+export function selectCandidateFrameTimes(plan: EditPlan): number[] {
+  const durationSec = plan.segments.at(-1)?.timelineEndSec ?? plan.source.durationSec;
+  const safeDuration = Math.max(1, durationSec);
+  return [0.05, 0.20, 0.38, 0.55, 0.72, 0.88].map((pct) =>
+    Number(
+      Math.min(
+        Math.max(0.5, safeDuration * pct),
+        Math.max(0.5, safeDuration - 0.5)
+      ).toFixed(3)
+    )
+  );
+}
+
 async function extractReferenceFrames(
   plan: EditPlan,
   sourcePath: string,
   packageDir: string,
-  processRunner: YoutubePackageProcessRunner
+  processRunner: YoutubePackageProcessRunner,
+  deps: Pick<RunYoutubePackageJobDeps, "selectBestFrame" | "preprocessFrame">
 ) {
-  const times = selectFrameTimes(plan);
+  const times = selectCandidateFrameTimes(plan);
+  const segmentDuration = Number(
+    Math.min(
+      6,
+      Math.max(1, (plan.segments.at(-1)?.timelineEndSec ?? plan.source.durationSec) / CANDIDATE_COUNT)
+    ).toFixed(3)
+  );
+
+  const candidatePaths: string[] = [];
+
   for (const [index, timeSec] of times.entries()) {
-    const outputPath = path.join(packageDir, `thumbnail-ref-${String(index + 1).padStart(2, "0")}.jpg`);
-    const result = await processRunner(
+    const candidatePath = path.join(
+      packageDir,
+      `thumbnail-candidate-${String(index + 1).padStart(2, "0")}.jpg`
+    );
+
+    // Try FFmpeg thumbnail filter first
+    const filterResult = await processRunner(
       getConfig().ffmpegPath,
       [
-        "-y",
-        "-ss",
-        String(timeSec),
-        "-i",
-        sourcePath,
-        "-frames:v",
-        "1",
-        "-q:v",
-        "2",
-        "-vf",
-        "scale=1280:-2",
-        outputPath
+        "-y", "-ss", String(timeSec), "-t", String(segmentDuration),
+        "-i", sourcePath,
+        "-vf", "thumbnail=60",
+        "-frames:v", "1", "-q:v", "2",
+        candidatePath,
       ],
       { timeoutMs: FRAME_TIMEOUT_MS }
     );
-    if (result.exitCode !== 0) {
-      throw new Error(result.stderr || result.stdout || `FFmpeg failed extracting frame ${index + 1}`);
+
+    if (filterResult.exitCode !== 0) {
+      // Fallback: single frame at timestamp
+      const fallback = await processRunner(
+        getConfig().ffmpegPath,
+        ["-y", "-ss", String(timeSec), "-i", sourcePath,
+         "-frames:v", "1", "-q:v", "2", "-vf", "scale=1280:-2",
+         candidatePath],
+        { timeoutMs: FRAME_TIMEOUT_MS }
+      );
+      if (fallback.exitCode !== 0) {
+        throw new Error(
+          fallback.stderr || fallback.stdout || `FFmpeg failed extracting candidate ${index + 1}`
+        );
+      }
     }
+
+    candidatePaths.push(candidatePath);
+  }
+
+  const bestFrameFn = deps.selectBestFrame ?? selectBestFrame;
+  const bestIdx = await bestFrameFn(candidatePaths);
+
+  // Assemble 4 ref frames: best face + 3 spread candidates
+  const refCandidateIndices = [bestIdx, 1, 3, 5].map((i) =>
+    Math.min(i, candidatePaths.length - 1)
+  );
+
+  const preprocessFn = deps.preprocessFrame ?? preprocessFrame;
+
+  for (const [refIndex, candidateIndex] of refCandidateIndices.entries()) {
+    const outputPath = path.join(
+      packageDir,
+      `thumbnail-ref-${String(refIndex + 1).padStart(2, "0")}.jpg`
+    );
+    await preprocessFn(candidatePaths[candidateIndex]!, outputPath);
   }
 }
 
@@ -222,14 +302,6 @@ async function extractIdentityClips(
   }
 }
 
-export function selectFrameTimes(plan: EditPlan) {
-  const durationSec = plan.segments.at(-1)?.timelineEndSec ?? plan.source.durationSec;
-  const safeDuration = Math.max(1, durationSec);
-  return [0.08, 0.32, 0.58, 0.84]
-    .slice(0, FRAME_COUNT)
-    .map((pct) => Number(Math.min(Math.max(0.2, safeDuration * pct), Math.max(0.2, safeDuration - 0.2)).toFixed(3)));
-}
-
 export function selectIdentityClipRanges(plan: EditPlan) {
   const durationSec = plan.segments.at(-1)?.timelineEndSec ?? plan.source.durationSec;
   const safeDuration = Math.max(1, durationSec);
@@ -243,6 +315,26 @@ export function selectIdentityClipRanges(plan: EditPlan) {
     startSec: Number(startSec.toFixed(3)),
     durationSec: clipDurationSec
   }));
+}
+
+function deriveBreakingNewsCopy(copy: YoutubePackageCopy): YoutubePackageCopy {
+  const base = copy.thumbnailPrompts[0];
+  if (!base) return copy;
+  return {
+    ...copy,
+    thumbnailPrompts: [
+      ...copy.thumbnailPrompts,
+      {
+        conceptId: "fiz_mesmo_assim",
+        title: "Breaking News",
+        renderText: {
+          ...base.renderText,
+          badge: "AO VIVO",
+        },
+        prompt: base.prompt,
+      },
+    ],
+  };
 }
 
 function clamp(value: number, min: number, max: number) {
