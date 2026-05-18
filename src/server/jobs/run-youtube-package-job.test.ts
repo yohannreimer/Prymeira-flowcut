@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createProjectWorkspace } from "../workspace";
@@ -86,34 +86,19 @@ describe("runYoutubePackageJob", () => {
       const jobs = createJobStore();
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
       const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
-      const generateYouTubeThumbnails = vi.fn(async (input: { outputDir: string }) => {
-        await mkdir(path.join(input.outputDir, "thumbnails"), { recursive: true });
-        await writeFile(path.join(input.outputDir, "thumbnail.png"), "selected");
-        await writeFile(path.join(input.outputDir, "thumbnails/opcao-01.png"), "thumb 1");
-        await writeFile(path.join(input.outputDir, "thumbnails/opcao-02.png"), "thumb 2");
-        await writeFile(path.join(input.outputDir, "thumbnails/opcao-03.png"), "thumb 3");
-        await writeFile(path.join(input.outputDir, "thumbnail-brief.json"), "{}");
-        return {
-          selected: "thumbnail.png" as const,
-          options: ["thumbnails/opcao-01.png", "thumbnails/opcao-02.png", "thumbnails/opcao-03.png"],
-          brief: "thumbnail-brief.json"
-        };
-      });
       const generateYoutubePackageCopy = vi.fn().mockResolvedValue({
         title: "Esse Fluxo De YouTube Economiza Horas",
         description: "Uma descricao pronta e estrategica para publicar o video com contexto, promessa e CTA natural.",
         thumbnailPrompts: [
           "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao intensa, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de curiosidade focada em maximizar cliques.",
           "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao de alerta, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de erro focada em maximizar cliques.",
-          "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao de resultado, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de ganho focada em maximizar cliques."
-        ],
-        thumbnailPromptWithoutFace: "Crie uma thumbnail 16:9 sem usar rosto, sem pessoa parecida com o criador, baseada no tema real do video. Use um simbolo central gigante, contraste dramatico, texto curto de ate tres palavras e composicao editorial feita para maximizar cliques."
+          "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao de resultado, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de ganho focada em maximizar cliques.",
+          "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, estilo sistema/status, com checklist claro e texto grande.",
+          "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, estilo rede social/negocio, com cards grandes e tese de atencao."
+        ]
       });
 
-      await runYoutubePackageJob({ jobId: job.id, workspace, jobs }, processRunner, {
-        generateYoutubePackageCopy,
-        generateYouTubeThumbnails
-      });
+      await runYoutubePackageJob({ jobId: job.id, workspace, jobs }, processRunner, { generateYoutubePackageCopy });
 
       const packageDir = path.join(workspace.root, "download", "youtube-package");
       await expect(readFile(path.join(packageDir, "titulo.txt"), "utf8")).resolves.toContain("Economiza Horas");
@@ -122,21 +107,13 @@ describe("runYoutubePackageJob", () => {
       expect(thumbnailPrompt).toContain("VARIACAO 1");
       expect(thumbnailPrompt).toContain("VARIACAO 2");
       expect(thumbnailPrompt).toContain("VARIACAO 3");
-      expect(thumbnailPrompt).toContain("THUMB SEM FOTO");
+      expect(thumbnailPrompt).toContain("VARIACAO 5");
+      expect(thumbnailPrompt).not.toContain("THUMB SEM FOTO");
       expect(thumbnailPrompt).toContain("quatro imagens");
       expect(thumbnailPrompt).toContain("identity-ref-01.mp4");
-      expect(thumbnailPrompt).toContain("sem usar rosto");
       await expect(readFile(path.join(packageDir, "transcricao.txt"), "utf8")).resolves.toContain("[0:00 - 0:02]");
-      await expect(readFile(path.join(packageDir, "thumbnail-generated-01.png"), "utf8")).resolves.toBe("thumb 1");
-      await expect(readFile(path.join(packageDir, "thumbnail-generated-02.png"), "utf8")).resolves.toBe("thumb 2");
-      await expect(readFile(path.join(packageDir, "thumbnail-generated-03.png"), "utf8")).resolves.toBe("thumb 3");
+      await expect(access(path.join(packageDir, "thumbnail-generated-01.png"))).rejects.toThrow();
       expect(generateYoutubePackageCopy).toHaveBeenCalledWith(expect.any(Object), expect.stringContaining("A thumbnail precisa vender"));
-      expect(generateYouTubeThumbnails).toHaveBeenCalledWith({
-        videoPath: roughCutPath,
-        outputDir: packageDir,
-        title: "Esse Fluxo De YouTube Economiza Horas",
-        durationSec: 100
-      });
       expect(processRunner).toHaveBeenCalledTimes(6);
       expect(processRunner.mock.calls[0][1]).toEqual(expect.arrayContaining(["-ss", "8", "-i", roughCutPath]));
       expect(processRunner.mock.calls[3][1]).toContain(path.join(packageDir, "thumbnail-ref-04.jpg"));

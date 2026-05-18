@@ -53,7 +53,7 @@ function createPlan(): EditPlan {
 }
 
 describe("generateYoutubePackageCopy", () => {
-  it("asks the model for exactly three high-CTR thumbnail variations", async () => {
+  it("asks the model for exactly five V9 polished thumbnail prompts", async () => {
     const parse = vi.fn().mockResolvedValue({
       output_parsed: {
         title: "Esse Fluxo De Thumbnail Aumenta Cliques",
@@ -61,9 +61,10 @@ describe("generateYoutubePackageCopy", () => {
         thumbnailPrompts: [
           "Prompt A ".repeat(70),
           "Prompt B ".repeat(70),
-          "Prompt C ".repeat(70)
-        ],
-        thumbnailPromptWithoutFace: "Prompt sem foto ".repeat(70)
+          "Prompt C ".repeat(70),
+          "Prompt D ".repeat(70),
+          "Prompt E ".repeat(70)
+        ]
       }
     });
 
@@ -74,17 +75,18 @@ describe("generateYoutubePackageCopy", () => {
     const request = parse.mock.calls[0][0];
     const systemPrompt = request.input[0].content as string;
     const userPrompt = request.input[1].content as string;
-    expect(systemPrompt).toContain("exatamente 3 variacoes");
-    expect(systemPrompt).toContain("1 thumbnail sem foto");
+    expect(systemPrompt).toContain("exatamente 5 prompts");
+    expect(systemPrompt).toContain("V9 polished");
+    expect(systemPrompt).toContain("Remotion/HTML/CSS");
     expect(systemPrompt).toContain("maximizar cliques");
     expect(systemPrompt).toContain("dois clipes curtos");
-    expect(userPrompt).toContain("Retorne 3 prompts completos");
-    expect(userPrompt).toContain("thumbnailPromptWithoutFace");
-    expect(userPrompt).toContain("Nao use rosto");
-    expect(userPrompt).toContain("nao invente uma pessoa parecida");
+    expect(userPrompt).toContain("Retorne 5 prompts completos");
+    expect(userPrompt).toContain("Conceito 1 = fiz mesmo assim");
+    expect(userPrompt).toContain("Conceito 2 = conflito vs resultado");
+    expect(userPrompt).toContain("Conceito 3 = manchete editorial");
+    expect(userPrompt).toContain("Conceito 4 = sistema/status");
+    expect(userPrompt).toContain("Conceito 5 = rede social/negocio");
     expect(userPrompt).toContain("4 imagens e os 2 clipes");
-    expect(userPrompt).toContain("Variacao 1 = curiosidade");
-    expect(userPrompt).toContain("Variacao 2 = erro");
-    expect(userPrompt).toContain("Variacao 3 = ganho");
+    expect(userPrompt).toContain("Nao use as thumbnails antigas como referencia visual");
   });
 });
