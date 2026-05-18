@@ -74,7 +74,7 @@ export function Editorial({ renderText, imageDataUrls }: ThumbnailRenderProps) {
           position: "absolute",
           left: "4%",
           top: "20%",
-          width: "56%",
+          width: "50%",
           fontFamily: playfairDisplay.fontFamily,
           fontWeight: 900,
           fontSize: headlineFontSize,
@@ -92,7 +92,7 @@ export function Editorial({ renderText, imageDataUrls }: ThumbnailRenderProps) {
           position: "absolute",
           left: "4%",
           top: "40%",
-          width: "56%",
+          width: "50%",
         }}
       >
         <div style={{ background: YELLOW, display: "inline", padding: "0 4px" }}>
@@ -106,7 +106,7 @@ export function Editorial({ renderText, imageDataUrls }: ThumbnailRenderProps) {
               letterSpacing: -1,
             }}
           >
-            {line2 ?? renderText.subhead.slice(0, 20).toUpperCase()}
+            {line2 ?? renderText.subhead.toUpperCase()}
           </span>
         </div>
       </div>
@@ -149,15 +149,15 @@ export function Editorial({ renderText, imageDataUrls }: ThumbnailRenderProps) {
         ))}
       </div>
 
-      {/* Face — right side */}
+      {/* Face — right side, taller and wider */}
       <FaceImage
         src={imageDataUrls[0]}
         style={{
           position: "absolute",
-          right: "3%",
-          top: "14%",
-          width: "34%",
-          height: "68%",
+          right: "2%",
+          top: "10%",
+          width: "42%",
+          height: "76%",
         }}
         borderRadius="0"
         border={`${Math.round(width * 0.003)}px solid ${INK}`}

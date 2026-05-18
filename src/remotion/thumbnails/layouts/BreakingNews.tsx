@@ -12,17 +12,18 @@ export function BreakingNews({ renderText, imageDataUrls, channelName }: Thumbna
 
   return (
     <AbsoluteFill style={{ background: INK, fontFamily: inter.fontFamily }}>
-      {/* Background image — darkened */}
+      {/* Background — uses identity photo for consistent professional look */}
       <img
-        src={imageDataUrls[1]}
+        src={imageDataUrls[0]}
         style={{
           position: "absolute",
           inset: 0,
           width: "100%",
           height: "100%",
           objectFit: "cover",
-          opacity: 0.35,
-          filter: "brightness(0.6)",
+          objectPosition: "center top",
+          opacity: 0.4,
+          filter: "brightness(0.55)",
         }}
       />
 

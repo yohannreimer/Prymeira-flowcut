@@ -12,17 +12,18 @@ export function StatusWindow({ renderText, imageDataUrls }: ThumbnailRenderProps
 
   return (
     <AbsoluteFill style={{ background: INK, fontFamily: inter.fontFamily }}>
-      {/* Blurred background image */}
+      {/* Blurred background — uses identity photo for consistent professional look */}
       <img
-        src={imageDataUrls[1]}
+        src={imageDataUrls[0]}
         style={{
           position: "absolute",
           inset: 0,
           width: "100%",
           height: "100%",
           objectFit: "cover",
-          opacity: 0.5,
-          filter: "blur(6px) brightness(0.6)",
+          objectPosition: "center top",
+          opacity: 0.45,
+          filter: "blur(8px) brightness(0.55)",
         }}
       />
 

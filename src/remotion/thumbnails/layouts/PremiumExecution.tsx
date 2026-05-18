@@ -110,41 +110,51 @@ export function PremiumExecution({ renderText, imageDataUrls }: ThumbnailRenderP
         }}
       />
 
-      {/* Stamp */}
+      {/* Face — large portrait filling the right half */}
+      <FaceImage
+        src={imageDataUrls[0]}
+        style={{
+          position: "absolute",
+          right: 0,
+          top: 0,
+          width: "52%",
+          height: "100%",
+        }}
+        borderRadius="0"
+        objectPosition="center top"
+      />
+
+      {/* Subtle left-edge gradient so text stays readable over the photo */}
       <div
         style={{
           position: "absolute",
-          right: "5%",
-          bottom: "28%",
+          right: 0,
+          top: 0,
+          width: "52%",
+          height: "100%",
+          background: "linear-gradient(to right, rgba(5,5,5,0.55) 0%, transparent 40%)",
+          pointerEvents: "none",
+        }}
+      />
+
+      {/* Stamp — repositioned to bottom-left */}
+      <div
+        style={{
+          position: "absolute",
+          left: "4%",
+          bottom: "6%",
           background: YELLOW,
           borderRadius: Math.round(width * 0.006),
-          padding: `${Math.round(height * 0.022)}px ${Math.round(width * 0.03)}px`,
+          padding: `${Math.round(height * 0.018)}px ${Math.round(width * 0.025)}px`,
           fontFamily: inter.fontFamily,
           fontWeight: 900,
           fontSize: Math.round(width * 0.012),
           color: INK,
-          transform: "rotate(-2deg)",
           textTransform: "uppercase",
         }}
       >
         {renderText.stamp}
       </div>
-
-      {/* Face */}
-      <FaceImage
-        src={imageDataUrls[0]}
-        style={{
-          position: "absolute",
-          right: "3%",
-          bottom: "5%",
-          width: "22%",
-          aspectRatio: "1",
-        }}
-        borderRadius={`${Math.round(width * 0.008)}px`}
-        border={`${Math.round(width * 0.004)}px solid ${YELLOW}`}
-        boxShadow={`${Math.round(width * 0.006)}px ${Math.round(width * 0.006)}px 0 ${YELLOW}`}
-        objectPosition="center top"
-      />
     </AbsoluteFill>
   );
 }
