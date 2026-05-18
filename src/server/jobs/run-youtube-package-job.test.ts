@@ -234,6 +234,9 @@ describe("runYoutubePackageJob", () => {
       expect(cropFaceRegion).not.toHaveBeenCalled();
       // Job completed successfully
       expect(jobs.get(job.id)).toMatchObject({ status: "passed", stage: "complete" });
+      // The selected identity photo was preprocessed and written as ref-01
+      const packageDir = path.join(workspace.root, "download", "youtube-package");
+      await expect(access(path.join(packageDir, "thumbnail-ref-01.jpg"))).resolves.toBeUndefined();
     });
   });
 
