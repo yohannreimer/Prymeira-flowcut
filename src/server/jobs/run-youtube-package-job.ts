@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Caption, EditPlan } from "../../shared/edit-plan";
 import { editPlanSchema } from "../../shared/edit-plan";
@@ -11,6 +11,7 @@ import { generateYoutubePackageCopy } from "../youtube/youtube-package-copy";
 import type { YoutubePackageCopy } from "../youtube/youtube-package-copy";
 import { selectBestFrame } from "../youtube/select-best-frame";
 import { preprocessFrame } from "../youtube/preprocess-frames";
+import { cropFaceRegion } from "../youtube/crop-face-region";
 import type { JobStore } from "./job-store";
 
 export type YoutubePackageProcessRunner = (
@@ -30,6 +31,7 @@ export type RunYoutubePackageJobDeps = {
   renderV9ThumbnailImages?: typeof renderV9ThumbnailImages;
   selectBestFrame?: typeof selectBestFrame;
   preprocessFrame?: typeof preprocessFrame;
+  cropFaceRegion?: typeof cropFaceRegion;
 };
 
 const CANDIDATE_COUNT = 6;
@@ -87,6 +89,7 @@ export async function runYoutubePackageJob(
     await extractReferenceFrames(plan, sourcePath, packageDir, processRunner, {
       selectBestFrame: deps.selectBestFrame,
       preprocessFrame: deps.preprocessFrame,
+      cropFaceRegion: deps.cropFaceRegion,
     });
     await extractIdentityClips(plan, sourcePath, packageDir, processRunner);
 
@@ -193,7 +196,7 @@ async function extractReferenceFrames(
   sourcePath: string,
   packageDir: string,
   processRunner: YoutubePackageProcessRunner,
-  deps: Pick<RunYoutubePackageJobDeps, "selectBestFrame" | "preprocessFrame">
+  deps: Pick<RunYoutubePackageJobDeps, "selectBestFrame" | "preprocessFrame" | "cropFaceRegion">
 ) {
   const times = selectCandidateFrameTimes(plan);
   const segmentDuration = Number(
@@ -246,19 +249,31 @@ async function extractReferenceFrames(
   const bestFrameFn = deps.selectBestFrame ?? selectBestFrame;
   const bestIdx = await bestFrameFn(candidatePaths);
 
-  // Assemble 4 ref frames: best face + 3 spread candidates
+  // Assemble 4 ref frames: best face (cropped) + 3 spread candidates (full frame backgrounds)
   const refCandidateIndices = [bestIdx, 1, 3, 5].map((i) =>
     Math.min(i, candidatePaths.length - 1)
   );
 
   const preprocessFn = deps.preprocessFrame ?? preprocessFrame;
+  const cropFaceFn = deps.cropFaceRegion ?? cropFaceRegion;
 
   for (const [refIndex, candidateIndex] of refCandidateIndices.entries()) {
+    const candidate = candidatePaths[candidateIndex]!;
     const outputPath = path.join(
       packageDir,
       `thumbnail-ref-${String(refIndex + 1).padStart(2, "0")}.jpg`
     );
-    await preprocessFn(candidatePaths[candidateIndex]!, outputPath);
+
+    if (refIndex === 0) {
+      // ref-01 = face reference: preprocess then crop to face region
+      const preprocessedPath = outputPath + ".pre.jpg";
+      await preprocessFn(candidate, preprocessedPath);
+      await cropFaceFn(preprocessedPath, outputPath);
+      await unlink(preprocessedPath).catch(() => undefined);
+    } else {
+      // ref-02/03/04 = background references: preprocess only, keep full frame
+      await preprocessFn(candidate, outputPath);
+    }
   }
 }
 
