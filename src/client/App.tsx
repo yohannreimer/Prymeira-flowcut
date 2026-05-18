@@ -1457,6 +1457,7 @@ function GuidedSaasFlow({
   const hasCut = Boolean(job?.outputUrl);
   const hasCaptions = Boolean(editPlan?.captions.length);
   const hasPackage = youtubePackageSummary?.status === "ready";
+  const thumbnailIdeaCount = youtubePackageSummary?.thumbnailIdeas.length ?? 0;
   const isCutRunning = Boolean(job && isActiveJob(job));
   const isCaptionJobRunning = Boolean(captionJob && isActiveJob(captionJob));
   const isPackageRunning = Boolean(youtubePackageJob && isActiveJob(youtubePackageJob));
@@ -1491,7 +1492,7 @@ function GuidedSaasFlow({
     },
     {
       label: "Thumbnail",
-      detail: youtubePackageSummary?.assets.length ? `${youtubePackageSummary.assets.length} referências` : "Ideias e assets",
+      detail: thumbnailIdeaCount ? `${thumbnailIdeaCount} ideias V9` : youtubePackageSummary?.assets.length ? `${youtubePackageSummary.assets.length} referências` : "Ideias e assets",
       state: hasPackage ? "done" : hasCaptions || isPackageRunning ? "active" : "waiting"
     },
     {
@@ -1614,9 +1615,20 @@ function GuidedSaasFlow({
           <p>{youtubePackageSummary?.description ?? "A descrição e o prompt de thumbnail ficam disponíveis depois da etapa de IA."}</p>
           <div className="saas-package-facts">
             <span>{hasCaptions ? "Transcrição pronta" : "Sem transcrição"}</span>
-            <span>{youtubePackageSummary?.thumbnailPrompt ? "Prompt de thumbnail pronto" : "Prompt pendente"}</span>
+            <span>{thumbnailIdeaCount ? `${thumbnailIdeaCount} ideias V9 prontas` : youtubePackageSummary?.thumbnailPrompt ? "Prompt de thumbnail pronto" : "Prompt pendente"}</span>
             <span>{hasPackage ? "Revisão liberada" : "Pacote pendente"}</span>
           </div>
+          {youtubePackageSummary?.thumbnailIdeas.length ? (
+            <div className="saas-thumbnail-ideas">
+              {youtubePackageSummary.thumbnailIdeas.map((idea) => (
+                <article className="saas-thumbnail-idea" key={idea.index}>
+                  <span>{String(idea.index).padStart(2, "0")}</span>
+                  <strong>{idea.title}</strong>
+                  <p>{idea.prompt}</p>
+                </article>
+              ))}
+            </div>
+          ) : null}
           {youtubePackageSummary?.thumbnailPrompt ? (
             <details className="saas-prompt">
               <summary>Ver prompt de thumbnail</summary>

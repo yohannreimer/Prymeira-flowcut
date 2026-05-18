@@ -15,8 +15,15 @@ export type YoutubePackageSummary = {
   description: string | null;
   transcriptAvailable: boolean;
   thumbnailPrompt: string | null;
+  thumbnailIdeas: ThumbnailIdea[];
   missing: string[];
   assets: YoutubePackageAsset[];
+};
+
+export type ThumbnailIdea = {
+  index: number;
+  title: string;
+  prompt: string;
 };
 
 const REQUIRED_TEXT_FILES = ["titulo.txt", "descricao.txt", "transcricao.txt", "prompt-thumbnail.txt"] as const;
@@ -48,6 +55,7 @@ export async function readYoutubePackageSummary(projectRoot: string, projectId: 
     description,
     transcriptAvailable: Boolean(transcript),
     thumbnailPrompt,
+    thumbnailIdeas: parseThumbnailIdeas(thumbnailPrompt),
     missing,
     assets: entries
       .filter(isPackageAssetName)
@@ -71,9 +79,30 @@ function createEmptySummary(status: YoutubePackageSummary["status"], missing: st
     description: null,
     transcriptAvailable: false,
     thumbnailPrompt: null,
+    thumbnailIdeas: [],
     missing,
     assets: []
   };
+}
+
+function parseThumbnailIdeas(thumbnailPrompt: string | null): ThumbnailIdea[] {
+  if (!thumbnailPrompt) return [];
+  return thumbnailPrompt
+    .split(/\n---\n/g)
+    .map((block) => block.trim())
+    .map((block, index) => {
+      const match = block.match(/^VARIACAO\s+(\d+)\s*\n+([\s\S]*)$/i);
+      const ideaIndex = match ? Number(match[1]) : index + 1;
+      const body = (match ? match[2] : block).trim();
+      const [maybeTitle, ...promptLines] = body.split(/\n+/);
+      const prompt = promptLines.join("\n").trim() || body;
+      return {
+        index: ideaIndex,
+        title: maybeTitle?.trim() || `Variação ${ideaIndex}`,
+        prompt
+      };
+    })
+    .filter((idea) => idea.prompt.length > 0);
 }
 
 async function readOptionalText(packageDir: string, fileName: string) {

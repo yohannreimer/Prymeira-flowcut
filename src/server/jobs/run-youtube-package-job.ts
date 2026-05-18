@@ -109,20 +109,39 @@ function captionsToTranscriptText(captions: Caption[]) {
 }
 
 async function writeCopyFiles(packageDir: string, copy: YoutubePackageCopy) {
+  const promptFiles = copy.thumbnailPrompts.map((idea, index) => (
+    writeFile(
+      path.join(packageDir, `thumbnail-idea-${String(index + 1).padStart(2, "0")}-${THUMBNAIL_IDEA_SLUGS[index] ?? "v9"}.txt`),
+      `${formatSingleThumbnailPrompt(idea, index)}\n`
+    )
+  ));
   await Promise.all([
     writeFile(path.join(packageDir, "titulo.txt"), `${copy.title.trim()}\n`),
     writeFile(path.join(packageDir, "descricao.txt"), `${copy.description.trim()}\n`),
-    writeFile(path.join(packageDir, "prompt-thumbnail.txt"), formatThumbnailPrompts(copy.thumbnailPrompts))
+    writeFile(path.join(packageDir, "prompt-thumbnail.txt"), formatThumbnailPrompts(copy.thumbnailPrompts)),
+    ...promptFiles
   ]);
 }
 
-function formatThumbnailPrompts(prompts: string[]) {
-  const facePrompts = prompts.map((prompt, index) => [
+const THUMBNAIL_IDEA_SLUGS = [
+  "fiz-mesmo-assim",
+  "conflito-resultado",
+  "manchete-editorial",
+  "sistema-status",
+  "rede-social-negocio"
+] as const;
+
+function formatThumbnailPrompts(prompts: YoutubePackageCopy["thumbnailPrompts"]) {
+  return `${prompts.map(formatSingleThumbnailPrompt).join("\n\n---\n\n")}\n`;
+}
+
+function formatSingleThumbnailPrompt(idea: YoutubePackageCopy["thumbnailPrompts"][number], index: number) {
+  return [
     `VARIACAO ${index + 1}`,
+    idea.title.trim(),
     "",
-    prompt.trim()
-  ].join("\n"));
-  return `${facePrompts.join("\n\n---\n\n")}\n`;
+    idea.prompt.trim()
+  ].join("\n");
 }
 
 async function pickFrameSource(workspace: ProjectWorkspace, fallbackSourcePath: string) {

@@ -59,11 +59,11 @@ describe("generateYoutubePackageCopy", () => {
         title: "Esse Fluxo De Thumbnail Aumenta Cliques",
         description: "Uma descricao pronta para YouTube com gancho, contexto, promessa concreta e chamada para acao natural.",
         thumbnailPrompts: [
-          "Prompt A ".repeat(70),
-          "Prompt B ".repeat(70),
-          "Prompt C ".repeat(70),
-          "Prompt D ".repeat(70),
-          "Prompt E ".repeat(70)
+          { conceptId: "fiz_mesmo_assim", title: "Fiz Mesmo Assim", prompt: "Prompt A ".repeat(70) },
+          { conceptId: "conflito_resultado", title: "Conflito Resultado", prompt: "Prompt B ".repeat(70) },
+          { conceptId: "manchete_editorial", title: "Manchete Editorial", prompt: "Prompt C ".repeat(70) },
+          { conceptId: "sistema_status", title: "Sistema Status", prompt: "Prompt D ".repeat(70) },
+          { conceptId: "rede_social_negocio", title: "Rede Social Negocio", prompt: "Prompt E ".repeat(70) }
         ]
       }
     });
@@ -75,18 +75,24 @@ describe("generateYoutubePackageCopy", () => {
     const request = parse.mock.calls[0][0];
     const systemPrompt = request.input[0].content as string;
     const userPrompt = request.input[1].content as string;
-    expect(systemPrompt).toContain("exatamente 5 prompts");
+    expect(systemPrompt).toContain("exatamente 5 objetos");
+    expect(systemPrompt).toContain("conceptId");
     expect(systemPrompt).toContain("V9 polished");
     expect(systemPrompt).toContain("Remotion/HTML/CSS");
     expect(systemPrompt).toContain("maximizar cliques");
     expect(systemPrompt).toContain("dois clipes curtos");
-    expect(userPrompt).toContain("Retorne 5 prompts completos");
-    expect(userPrompt).toContain("Conceito 1 = fiz mesmo assim");
+    expect(systemPrompt).toContain("Biblioteca V9 polished obrigatoria");
+    expect(systemPrompt).toContain("V9 1 / fiz_mesmo_assim");
+    expect(systemPrompt).toContain("V9 5 / rede_social_negocio");
+    expect(userPrompt).toContain("Retorne 5 objetos completos");
+    expect(userPrompt).toContain("fiz_mesmo_assim");
+    expect(userPrompt).toContain("Nao use as thumbnails antigas como arquivos de referencia");
+    expect(userPrompt).toContain("Conceito 1 = fiz mesmo assim: siga o layout V9 1");
     expect(userPrompt).toContain("Conceito 2 = conflito vs resultado");
     expect(userPrompt).toContain("Conceito 3 = manchete editorial");
     expect(userPrompt).toContain("Conceito 4 = sistema/status");
     expect(userPrompt).toContain("Conceito 5 = rede social/negocio");
     expect(userPrompt).toContain("4 imagens e os 2 clipes");
-    expect(userPrompt).toContain("Nao use as thumbnails antigas como referencia visual");
+    expect(userPrompt).toContain("dois cards/celulares inclinados");
   });
 });

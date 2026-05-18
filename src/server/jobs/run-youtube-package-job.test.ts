@@ -90,11 +90,11 @@ describe("runYoutubePackageJob", () => {
         title: "Esse Fluxo De YouTube Economiza Horas",
         description: "Uma descricao pronta e estrategica para publicar o video com contexto, promessa e CTA natural.",
         thumbnailPrompts: [
-          "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao intensa, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de curiosidade focada em maximizar cliques.",
-          "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao de alerta, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de erro focada em maximizar cliques.",
-          "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao de resultado, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de ganho focada em maximizar cliques.",
-          "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, estilo sistema/status, com checklist claro e texto grande.",
-          "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, estilo rede social/negocio, com cards grandes e tese de atencao."
+          { conceptId: "fiz_mesmo_assim", title: "Fiz Mesmo Assim", prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao intensa, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de curiosidade focada em maximizar cliques." },
+          { conceptId: "conflito_resultado", title: "Conflito Resultado", prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao de alerta, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de erro focada em maximizar cliques." },
+          { conceptId: "manchete_editorial", title: "Manchete Editorial", prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, com rosto grande, expressao de resultado, contraste alto, fundo limpo e texto curto de no maximo tres palavras. Variacao de ganho focada em maximizar cliques." },
+          { conceptId: "sistema_status", title: "Sistema Status", prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, estilo sistema/status, com checklist claro e texto grande." },
+          { conceptId: "rede_social_negocio", title: "Rede Social Negocio", prompt: "Use as quatro imagens anexadas e os dois clipes identity-ref-01.mp4 e identity-ref-02.mp4 como referencia fiel do rosto do criador. Crie uma thumbnail 16:9 profissional, estilo rede social/negocio, com cards grandes e tese de atencao." }
         ]
       });
 
@@ -112,6 +112,8 @@ describe("runYoutubePackageJob", () => {
       expect(thumbnailPrompt).toContain("quatro imagens");
       expect(thumbnailPrompt).toContain("identity-ref-01.mp4");
       await expect(readFile(path.join(packageDir, "transcricao.txt"), "utf8")).resolves.toContain("[0:00 - 0:02]");
+      await expect(readFile(path.join(packageDir, "thumbnail-idea-01-fiz-mesmo-assim.txt"), "utf8")).resolves.toContain("VARIACAO 1");
+      await expect(readFile(path.join(packageDir, "thumbnail-idea-05-rede-social-negocio.txt"), "utf8")).resolves.toContain("VARIACAO 5");
       await expect(access(path.join(packageDir, "thumbnail-generated-01.png"))).rejects.toThrow();
       expect(generateYoutubePackageCopy).toHaveBeenCalledWith(expect.any(Object), expect.stringContaining("A thumbnail precisa vender"));
       expect(processRunner).toHaveBeenCalledTimes(6);

@@ -39,6 +39,11 @@ export type YoutubePackageSummary = {
   description: string | null;
   transcriptAvailable: boolean;
   thumbnailPrompt: string | null;
+  thumbnailIdeas: Array<{
+    index: number;
+    title: string;
+    prompt: string;
+  }>;
   missing: string[];
   assets: Array<{
     kind: "thumbnail_reference" | "identity_clip" | "generated_thumbnail";

@@ -12,7 +12,7 @@ describe("readYoutubePackageSummary", () => {
     await writeFile(path.join(packageDir, "titulo.txt"), "Titulo pronto\n");
     await writeFile(path.join(packageDir, "descricao.txt"), "Descricao pronta\n");
     await writeFile(path.join(packageDir, "transcricao.txt"), "[00:00 - 00:01] Oi\n");
-    await writeFile(path.join(packageDir, "prompt-thumbnail.txt"), "VARIACAO 1\n\nPrompt A\n");
+    await writeFile(path.join(packageDir, "prompt-thumbnail.txt"), "VARIACAO 1\nFiz Mesmo Assim\n\nPrompt A\n\n---\n\nVARIACAO 2\nConflito Resultado\n\nPrompt B\n");
     await writeFile(path.join(packageDir, "thumbnail-ref-01.jpg"), "jpg");
     await writeFile(path.join(packageDir, "thumbnail-generated-01.png"), "png");
     await writeFile(path.join(packageDir, "identity-ref-01.mp4"), "mp4");
@@ -22,7 +22,11 @@ describe("readYoutubePackageSummary", () => {
       title: "Titulo pronto",
       description: "Descricao pronta",
       transcriptAvailable: true,
-      thumbnailPrompt: "VARIACAO 1\n\nPrompt A",
+      thumbnailPrompt: "VARIACAO 1\nFiz Mesmo Assim\n\nPrompt A\n\n---\n\nVARIACAO 2\nConflito Resultado\n\nPrompt B",
+      thumbnailIdeas: [
+        { index: 1, title: "Fiz Mesmo Assim", prompt: "Prompt A" },
+        { index: 2, title: "Conflito Resultado", prompt: "Prompt B" }
+      ],
       missing: [],
       assets: [
         {
@@ -54,6 +58,7 @@ describe("readYoutubePackageSummary", () => {
       description: null,
       transcriptAvailable: false,
       thumbnailPrompt: null,
+      thumbnailIdeas: [],
       missing: ["titulo.txt", "descricao.txt", "transcricao.txt", "prompt-thumbnail.txt"],
       assets: []
     });
@@ -68,6 +73,7 @@ describe("readYoutubePackageSummary", () => {
       description: null,
       transcriptAvailable: false,
       thumbnailPrompt: null,
+      thumbnailIdeas: [],
       missing: ["titulo.txt", "descricao.txt", "transcricao.txt", "prompt-thumbnail.txt"],
       assets: []
     });

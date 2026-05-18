@@ -277,6 +277,52 @@ select {
   background: rgba(244, 239, 227, 0.74);
 }
 
+.saas-thumbnail-ideas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.saas-thumbnail-idea {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 7px;
+  background: var(--paper);
+}
+
+.saas-thumbnail-idea span {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.saas-thumbnail-idea strong {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.1;
+}
+
+.saas-thumbnail-idea p {
+  display: -webkit-box;
+  max-height: 88px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  color: #5a5145;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .saas-prompt summary {
   cursor: pointer;
   font-weight: 850;
