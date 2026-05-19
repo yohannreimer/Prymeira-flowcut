@@ -11,6 +11,13 @@ afterEach(() => {
 });
 
 describe("createApp", () => {
+  it("fails closed in production when Prymeira Account is not configured", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("PRYMEIRA_ACCOUNT_API_URL", "");
+
+    expect(() => createApp()).toThrow("PRYMEIRA_ACCOUNT_API_URL is required in production.");
+  });
+
   it("returns health status", async () => {
     await request(createApp())
       .get("/api/health")

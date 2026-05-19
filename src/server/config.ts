@@ -1,6 +1,7 @@
 import path from "node:path";
 
 export type AppConfig = {
+  nodeEnv?: string;
   workspaceRoot: string;
   ffmpegPath: string;
   ffprobePath: string;
@@ -31,6 +32,7 @@ function normalizeOptionalUrl(rawUrl = process.env.PRYMEIRA_ACCOUNT_API_URL) {
 
 export function getConfig(): AppConfig {
   return {
+    nodeEnv: process.env.NODE_ENV ?? "development",
     workspaceRoot: path.resolve(process.env.AI_EDITOR_WORKSPACE ?? path.resolve(process.cwd(), "workspace")),
     ffmpegPath: process.env.FFMPEG_PATH ?? "ffmpeg",
     ffprobePath: process.env.FFPROBE_PATH ?? "ffprobe",

@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getClerkPublishableKey } from "./runtime-config";
 
@@ -20,5 +22,16 @@ describe("runtime config", () => {
     expect(getClerkPublishableKey({
       runtimeConfig: { VITE_CLERK_PUBLISHABLE_KEY: "pk_container" }
     })).toBe("pk_container");
+  });
+
+  it("ships a local config.js placeholder for Vite development", () => {
+    const configPath = resolve(process.cwd(), "public/config.js");
+    expect(existsSync(configPath)).toBe(true);
+
+    const configSource = readFileSync(configPath, "utf8");
+    const window = {} as { __PRYMEIRA_CONFIG__?: unknown };
+    new Function("window", configSource)(window);
+
+    expect(window.__PRYMEIRA_CONFIG__).toEqual({});
   });
 });

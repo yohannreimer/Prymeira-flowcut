@@ -48,6 +48,9 @@ export type CreateAppOptions = {
 
 export function createApp(options: CreateAppOptions = {}) {
   const config = getConfig();
+  if (!options.requireTenantAccess && !config.prymeiraAccountApiUrl && (config.nodeEnv ?? "development") === "production") {
+    throw new Error("PRYMEIRA_ACCOUNT_API_URL is required in production.");
+  }
   const workspaceRoot = options.workspaceRoot ?? config.workspaceRoot;
   const uploadFileSizeLimitBytes = options.uploadFileSizeLimitBytes ?? config.uploadFileSizeLimitBytes;
   const jobs = options.jobs ?? createJobStore();
