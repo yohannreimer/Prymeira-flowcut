@@ -59,7 +59,7 @@ export function Sidebar({ projectName, steps, footerLabel, footerDisabled, onFoo
       {/* Top */}
       <div style={{ padding: "18px 16px 14px", borderBottom: "1px solid var(--shell-border)" }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: "var(--shell-gold)", letterSpacing: "1.5px", textTransform: "uppercase" }}>
-          MediaFactory
+          Flowcut
         </div>
         <div style={{ fontSize: 12, color: "#444", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {projectName ?? "Sem projeto aberto"}

@@ -25,6 +25,7 @@ import {
   generateCaptions,
   generateYoutubePackage,
   listProjects,
+  publishYoutubeVideo,
   rerenderProject,
   exportProject,
   type EditPlanSummary,
@@ -114,6 +115,8 @@ export function App() {
   const [isDownloadingExport, setIsDownloadingExport] = useState(false);
   const [isPlanningMotion, setIsPlanningMotion] = useState(false);
   const [isGeneratingYoutubePackage, setIsGeneratingYoutubePackage] = useState(false);
+  const [isPublishingYoutube, setIsPublishingYoutube] = useState(false);
+  const [youtubePublicationUrl, setYoutubePublicationUrl] = useState<string | null>(null);
   const [exportJob, setExportJob] = useState<ProjectJob | null>(null);
   const [captionJob, setCaptionJob] = useState<ProjectJob | null>(null);
   const [youtubePackageJob, setYoutubePackageJob] = useState<ProjectJob | null>(null);
@@ -388,6 +391,8 @@ export function App() {
     setPublicationTitle("");
     setPublicationDescription("");
     setPublicationVisibility("private");
+    setIsPublishingYoutube(false);
+    setYoutubePublicationUrl(null);
     setIsGeneratingYoutubePackage(false);
     setCaptionSettings(DEFAULT_CAPTION_SETTINGS);
     setCaptionStyleId(DEFAULT_CAPTION_STYLE_ID);
@@ -569,6 +574,8 @@ export function App() {
         setPublicationTitle("");
         setPublicationDescription("");
         setPublicationVisibility("private");
+        setIsPublishingYoutube(false);
+        setYoutubePublicationUrl(null);
         setIsExporting(false);
         setIsGeneratingYoutubePackage(false);
       }
@@ -602,6 +609,8 @@ export function App() {
       setPublicationTitle("");
       setPublicationDescription("");
       setPublicationVisibility("private");
+      setIsPublishingYoutube(false);
+      setYoutubePublicationUrl(null);
       setIsExporting(false);
       setIsGeneratingYoutubePackage(false);
       setCaptionSettings(plan.captionSettings);
@@ -636,6 +645,7 @@ export function App() {
     if (!job) return;
     setError(null);
     setIsExporting(true);
+    setYoutubePublicationUrl(null);
     try {
       let exportCaptionSettings: CaptionSettings | undefined;
       if (exportRenderMode === "full" && selectedCaption) {
@@ -682,6 +692,34 @@ export function App() {
     }
   }
 
+  async function onPublishYoutube() {
+    if (!job) return;
+    if (!exportJob?.outputUrl) {
+      setError("Gere o export final antes de publicar no YouTube.");
+      return;
+    }
+    const title = publicationTitle.trim() || youtubePackageSummary?.title?.trim();
+    if (!title) {
+      setError("Preencha o título antes de publicar no YouTube.");
+      return;
+    }
+    setError(null);
+    setIsPublishingYoutube(true);
+    try {
+      const publication = await publishYoutubeVideo(job.projectId, {
+        title,
+        description: publicationDescription,
+        privacyStatus: publicationVisibility,
+        thumbnailName: selectedGeneratedThumbnailName
+      });
+      setYoutubePublicationUrl(publication.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao publicar no YouTube");
+    } finally {
+      setIsPublishingYoutube(false);
+    }
+  }
+
   async function onGenerateYoutubePackage() {
     if (!job) return;
     if (!editPlan?.captions.length) {
@@ -695,6 +733,7 @@ export function App() {
     setSelectedPackageAssetName(null);
     setSelectedGeneratedThumbnailName(null);
     setIsPublicationReviewOpen(false);
+    setYoutubePublicationUrl(null);
     try {
       const nextJob = await generateYoutubePackage(job.projectId);
       setYoutubePackageJob(nextJob);
@@ -921,6 +960,8 @@ export function App() {
         youtubePackageSummary={youtubePackageSummary}
         selectedGeneratedThumbnailName={selectedGeneratedThumbnailName}
         isExporting={isExporting}
+        isPublishingYoutube={isPublishingYoutube}
+        youtubePublicationUrl={youtubePublicationUrl}
         exportJob={exportJob}
         isUploading={isUploading}
         isCaptioning={isCaptioning}
@@ -943,6 +984,7 @@ export function App() {
         onPublicationDescriptionChange={setPublicationDescription}
         onPublicationVisibilityChange={setPublicationVisibility}
         onStartFinalExport={() => void onExport()}
+        onPublishYoutube={() => void onPublishYoutube()}
       />
 
       {isAdvancedEditorOpen ? (
@@ -1602,7 +1644,7 @@ function GuidedSaasFlow({
   }
 
   return (
-    <section className="saas-flow" aria-label="Fluxo principal do MediaFactory">
+    <section className="saas-flow" aria-label="Fluxo principal do Flowcut">
       <div className="saas-flow-main">
         <div className="saas-copy">
           <p className="eyebrow">Fluxo principal</p>
