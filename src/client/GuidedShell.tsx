@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from "react";
 import type { EditPlanSummary, ProjectJob, UploadConfig, YoutubePackageSummary } from "./api";
 import { formatBytes } from "./api";
 import type { ProjectLibraryItem } from "../shared/project-library";
@@ -148,7 +149,28 @@ export function GuidedShell({
   const videoOrientation: "horizontal" | "vertical" =
     editPlan && editPlan.source.width >= editPlan.source.height ? "horizontal" : "vertical";
 
-  const currentStep = deriveCurrentStep(file, job, isUploading, hasCut, hasCaptions, hasPackage);
+  // viewStep: manual navigation state.
+  // Auto-advances only when pipeline starts processing (not when a step completes).
+  // User can click any non-locked sidebar step to navigate freely.
+  const [viewStep, setViewStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const initialSyncDone = useRef(false);
+
+  // On first load: if existing project data is present, jump to derived step
+  useEffect(() => {
+    if (!initialSyncDone.current && (job || hasCut || hasCaptions || hasPackage)) {
+      initialSyncDone.current = true;
+      setViewStep(deriveCurrentStep(file, job, isUploading, hasCut, hasCaptions, hasPackage));
+    }
+  }, [job, hasCut, hasCaptions, hasPackage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-advance when pipeline starts processing (not on completion)
+  useEffect(() => {
+    if (isUploading || isCutRunning) { setViewStep(2); return; }
+    if (isCaptionJobRunning) { setViewStep(3); return; }
+    if (isPackageRunning) { setViewStep(4); }
+  }, [isUploading, isCutRunning, isCaptionJobRunning, isPackageRunning]);
+
+  const currentStep = viewStep;
 
   const sidebarSteps = buildSidebarSteps(
     file, job, isUploading,
@@ -157,12 +179,24 @@ export function GuidedShell({
     hasPackage, isPackageRunning
   );
 
-  // Footer CTA label and disabled state per step
+  // Footer CTA: triggers actions OR navigates to next step when current step is done
   const footerConfig: Record<number, { label: string; disabled: boolean; action: () => void }> = {
     1: { label: "Enviar vídeo", disabled: !file || isUploading, action: onStartUpload },
-    2: { label: isCutRunning ? "Processando…" : "Aguardando corte", disabled: true, action: () => {} },
-    3: { label: isCaptionJobRunning ? "Transcrevendo…" : "Gerar transcrição →", disabled: hasCaptions || isCaptionJobRunning || !hasCut, action: onGenerateCaptions },
-    4: { label: isPackageRunning ? "Gerando…" : "Gerar pacote YT →", disabled: isPackageRunning || !hasCaptions, action: onGenerateYoutubePackage },
+    2: {
+      label: (isCutRunning || isUploading) ? "Processando…" : hasCut ? "Ir para transcrição →" : "Aguardando corte",
+      disabled: isCutRunning || isUploading || !hasCut,
+      action: () => setViewStep(3)
+    },
+    3: {
+      label: isCaptionJobRunning ? "Transcrevendo…" : hasCaptions ? "Ir para pacote YT →" : "Gerar transcrição →",
+      disabled: isCaptionJobRunning || !hasCut,
+      action: hasCaptions ? () => setViewStep(4) : onGenerateCaptions
+    },
+    4: {
+      label: isPackageRunning ? "Gerando…" : hasPackage ? "Ir para publicar →" : "Gerar pacote YT →",
+      disabled: isPackageRunning || !hasCaptions,
+      action: hasPackage ? () => setViewStep(5) : onGenerateYoutubePackage
+    },
     5: { label: "Gerar export final →", disabled: isExporting || !hasPackage, action: onStartFinalExport }
   };
   const footer = footerConfig[currentStep];
@@ -186,6 +220,8 @@ export function GuidedShell({
           footerLabel={footer.label}
           footerDisabled={footer.disabled}
           onFooterClick={footer.action}
+          viewingStep={currentStep}
+          onStepClick={(n) => setViewStep(n as 1 | 2 | 3 | 4 | 5)}
         />
       }
       header={

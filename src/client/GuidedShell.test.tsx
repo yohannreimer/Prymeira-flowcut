@@ -18,39 +18,32 @@ describe("deriveCurrentStep", () => {
 
   it("returns 3 when cut is done but no captions", () => {
     // job must exist (upload completed) to advance past step 1
-    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as ProjectJob;
+    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as unknown as ProjectJob;
     expect(deriveCurrentStep(null, mockJob, false, true, false, false)).toBe(3);
   });
 
   it("returns 4 when captions done but no package", () => {
-    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as ProjectJob;
+    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as unknown as ProjectJob;
     expect(deriveCurrentStep(null, mockJob, false, true, true, false)).toBe(4);
   });
 
   it("returns 5 when package is ready", () => {
-    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as ProjectJob;
+    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as unknown as ProjectJob;
     expect(deriveCurrentStep(null, mockJob, false, true, true, true)).toBe(5);
   });
 
   it("prioritizes hasCut over job presence", () => {
-    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as ProjectJob;
+    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as unknown as ProjectJob;
     expect(deriveCurrentStep(null, mockJob, false, true, false, false)).toBe(3);
   });
 
   it("prioritizes hasCaptions over hasCut", () => {
-    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as ProjectJob;
+    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as unknown as ProjectJob;
     expect(deriveCurrentStep(null, mockJob, false, true, true, false)).toBe(4);
   });
 
   it("returns correct step when job exists", () => {
-    const mockJob: ProjectJob = {
-      id: "job1",
-      projectId: "proj1",
-      type: "ai_cut",
-      status: "queued",
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
+    const mockJob = { id: "job1", projectId: "proj1", status: "queued" } as unknown as ProjectJob;
     expect(deriveCurrentStep(null, mockJob, false, true, true, false)).toBe(4);
   });
 });
@@ -86,7 +79,7 @@ describe("buildSidebarSteps", () => {
   });
 
   it("marks step 2 done when cut is complete (job exists)", () => {
-    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as ProjectJob;
+    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as unknown as ProjectJob;
     const steps = buildSidebarSteps(null, mockJob, false, true, false, null, false, false, false, false);
     expect(steps[1].status).toBe("done");
   });
@@ -113,14 +106,12 @@ describe("buildSidebarSteps", () => {
   });
 
   it("shows caption count in step 3 sub when captions exist", () => {
-    const editPlan: EditPlanSummary = {
-      videoTitle: "Test",
-      sections: [],
+    const editPlan = {
       captions: [
-        { id: "c1", text: "Caption 1", start: 0, end: 5 },
-        { id: "c2", text: "Caption 2", start: 5, end: 10 }
+        { id: "c1", text: "Caption 1", startSec: 0, endSec: 5 },
+        { id: "c2", text: "Caption 2", startSec: 5, endSec: 10 }
       ]
-    };
+    } as unknown as EditPlanSummary;
     const steps = buildSidebarSteps(null, null, false, true, false, editPlan, true, false, false, false);
     expect(steps[2].sub).toContain("2");
   });
@@ -174,14 +165,7 @@ describe("buildSidebarSteps", () => {
   });
 
   it("shows project ID in step 1 sub when job exists", () => {
-    const mockJob: ProjectJob = {
-      id: "job1",
-      projectId: "proj123456789012345678",
-      type: "ai_cut",
-      status: "queued",
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
+    const mockJob = { id: "job1", projectId: "proj123456789012345678", status: "queued" } as unknown as ProjectJob;
     const steps = buildSidebarSteps(null, mockJob, false, false, false, null, false, false, false, false);
     expect(steps[0].sub).toContain("proj12345678901234");
   });

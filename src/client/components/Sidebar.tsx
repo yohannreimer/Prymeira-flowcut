@@ -15,6 +15,8 @@ type SidebarProps = {
   footerLabel: string;
   footerDisabled: boolean;
   onFooterClick: () => void;
+  viewingStep: number;
+  onStepClick: (n: number) => void;
 };
 
 const BADGE_STYLES: Record<StepStatus, React.CSSProperties> = {
@@ -51,7 +53,7 @@ const SUB_COLOR: Record<StepStatus, string> = {
   locked: "#1e1e1c"
 };
 
-export function Sidebar({ projectName, steps, footerLabel, footerDisabled, onFooterClick }: SidebarProps) {
+export function Sidebar({ projectName, steps, footerLabel, footerDisabled, onFooterClick, viewingStep, onStepClick }: SidebarProps) {
   return (
     <>
       {/* Top */}
@@ -69,12 +71,14 @@ export function Sidebar({ projectName, steps, footerLabel, footerDisabled, onFoo
         {steps.map((step) => (
           <div
             key={step.number}
+            onClick={step.status !== "locked" ? () => onStepClick(step.number) : undefined}
             style={{
               display: "flex", alignItems: "center", gap: 11,
               padding: "9px 14px 9px 16px",
               position: "relative",
-              background: step.status === "active" ? "rgba(252,192,9,0.06)" : "transparent",
-              borderLeft: step.status === "active" ? "2px solid var(--shell-gold)" : "2px solid transparent"
+              cursor: step.status !== "locked" ? "pointer" : "default",
+              background: step.number === viewingStep ? "rgba(252,192,9,0.06)" : "transparent",
+              borderLeft: step.number === viewingStep ? "2px solid var(--shell-gold)" : "2px solid transparent"
             }}
           >
             {/* Badge */}
