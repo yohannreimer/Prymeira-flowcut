@@ -18,6 +18,19 @@ describe("createJobStore", () => {
 
     expect(jobs.get(created.id)?.warnings).toEqual(["render warning"]);
   });
+
+  it("stores workspace IDs and hides jobs from other workspaces", () => {
+    const jobs = createJobStore();
+    const created = jobs.create({
+      projectId: "project_123",
+      sourcePath: "/tmp/source.mp4",
+      workspaceId: "workspace_123"
+    });
+
+    expect(created.workspaceId).toBe("workspace_123");
+    expect(jobs.getForWorkspace(created.id, "workspace_123")).toMatchObject({ id: created.id });
+    expect(jobs.getForWorkspace(created.id, "workspace_other")).toBeNull();
+  });
 });
 
 const invalidUpdate: JobUpdate = {

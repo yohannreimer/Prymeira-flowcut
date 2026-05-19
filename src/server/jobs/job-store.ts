@@ -7,6 +7,7 @@ export type ProjectJob = {
   stage: string;
   message: string;
   sourcePath: string;
+  workspaceId: string | null;
   outputPath: string | null;
   planPath: string | null;
   warnings: string[];
@@ -15,6 +16,7 @@ export type ProjectJob = {
   updatedAt: string;
 };
 
+export type CreateJobInput = Pick<ProjectJob, "projectId" | "sourcePath"> & { workspaceId?: string | null };
 export type JobUpdate = Partial<Pick<ProjectJob, "status" | "stage" | "message" | "outputPath" | "planPath" | "warnings" | "error">>;
 export type JobStore = ReturnType<typeof createJobStore>;
 
@@ -29,7 +31,7 @@ export function createJobStore() {
   const jobs = new Map<string, ProjectJob>();
 
   return {
-    create(input: Pick<ProjectJob, "projectId" | "sourcePath">) {
+    create(input: CreateJobInput) {
       const now = new Date().toISOString();
       const job: ProjectJob = {
         id: `job_${crypto.randomUUID()}`,
@@ -38,6 +40,7 @@ export function createJobStore() {
         stage: "queued",
         message: "Waiting to start",
         sourcePath: input.sourcePath,
+        workspaceId: input.workspaceId ?? null,
         outputPath: null,
         planPath: null,
         warnings: [],
@@ -51,6 +54,12 @@ export function createJobStore() {
     get(id: string) {
       const job = jobs.get(id);
       return job ? cloneJob(job) : null;
+    },
+    getForWorkspace(id: string, workspaceId: string) {
+      const job = jobs.get(id);
+      if (!job) return null;
+      if (job.workspaceId && job.workspaceId !== workspaceId) return null;
+      return cloneJob(job);
     },
     update(id: string, patch: JobUpdate) {
       const current = jobs.get(id);
