@@ -45,7 +45,9 @@ describe("checkDependencies", () => {
         ffmpegPath: "ffmpeg",
         ffprobePath: "ffprobe",
         autoEditorPath: "auto-editor",
-        uploadFileSizeLimitBytes: 1024
+        uploadFileSizeLimitBytes: 1024,
+        prymeiraAccountApiUrl: null,
+        prymeiraProductKey: "media"
       },
       {
         spawnBinary(command) {
@@ -77,7 +79,9 @@ describe("checkDependencies", () => {
         ffmpegPath: "ffmpeg",
         ffprobePath: "ffprobe",
         autoEditorPath: "auto-editor",
-        uploadFileSizeLimitBytes: 1024
+        uploadFileSizeLimitBytes: 1024,
+        prymeiraAccountApiUrl: null,
+        prymeiraProductKey: "media"
       },
       {
         timeoutMs: 1,
