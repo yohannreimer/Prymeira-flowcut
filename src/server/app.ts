@@ -10,7 +10,12 @@ import type { RunMotionJobInput } from "./jobs/run-motion-job";
 import type { RunProjectJobInput } from "./jobs/run-project-job";
 import type { RunYoutubePackageJobInput } from "./jobs/run-youtube-package-job";
 import { InMemoryUploadSessionRepository } from "./media-factory-saas/upload-sessions";
-import type { PrymeiraTenantContext } from "./prymeira/tenant";
+import {
+  createPrymeiraTenantAccess,
+  getTenantProjectRoot,
+  PrymeiraTenantError,
+  type PrymeiraTenantContext
+} from "./prymeira/tenant";
 import {
   createMediaFactorySaasRouter,
   type MediaFactoryObjectStorage
@@ -46,20 +51,38 @@ export function createApp(options: CreateAppOptions = {}) {
   const workspaceRoot = options.workspaceRoot ?? config.workspaceRoot;
   const uploadFileSizeLimitBytes = options.uploadFileSizeLimitBytes ?? config.uploadFileSizeLimitBytes;
   const jobs = options.jobs ?? createJobStore();
+  const requireTenantAccess = options.requireTenantAccess ?? (config.prymeiraAccountApiUrl
+    ? createPrymeiraTenantAccess({
+      accountApiUrl: config.prymeiraAccountApiUrl,
+      productKey: config.prymeiraProductKey
+    })
+    : undefined);
   const app = express();
 
   app.use(express.json());
-  app.get("/media/:projectId/:filename", (req, res) => {
+  async function resolveRequestWorkspaceRoot(req: express.Request): Promise<string> {
+    if (!requireTenantAccess) {
+      return workspaceRoot;
+    }
+
+    const tenant = await requireTenantAccess(req.get("authorization"));
+    return getTenantProjectRoot(workspaceRoot, tenant.workspaceId);
+  }
+
+  app.get("/media/:projectId/:filename", async (req, res, next) => {
     const { projectId, filename } = req.params;
     if (!PROJECT_ID_PATTERN.test(projectId) || filename !== path.basename(filename)) {
       res.status(404).json({ error: "Media not found" });
       return;
     }
 
-    if (filename === "source") {
-      const uploadsRoot = path.resolve(workspaceRoot, projectId, "uploads");
-      void readdir(uploadsRoot)
-        .then((files) => {
+    try {
+      const requestWorkspaceRoot = await resolveRequestWorkspaceRoot(req);
+
+      if (filename === "source") {
+        const uploadsRoot = path.resolve(requestWorkspaceRoot, projectId, "uploads");
+        try {
+          const files = await readdir(uploadsRoot);
           const sourceName = files.find((file) => file.startsWith("source."));
           if (!sourceName) {
             res.status(404).json({ error: "Media not found" });
@@ -67,27 +90,29 @@ export function createApp(options: CreateAppOptions = {}) {
           }
           setMediaNoCacheHeaders(res);
           res.sendFile(path.resolve(uploadsRoot, sourceName));
-        })
-        .catch(() => {
+        } catch {
           if (!res.headersSent) res.status(404).json({ error: "Media not found" });
-        });
-      return;
-    }
-
-    const rendersRoot = path.resolve(workspaceRoot, projectId, "renders");
-    const mediaPath = path.resolve(rendersRoot, filename);
-    const relativeToRenders = path.relative(rendersRoot, mediaPath);
-    if (relativeToRenders.startsWith("..") || path.isAbsolute(relativeToRenders)) {
-      res.status(404).json({ error: "Media not found" });
-      return;
-    }
-
-    setMediaNoCacheHeaders(res);
-    res.sendFile(mediaPath, (error) => {
-      if (error && !res.headersSent) {
-        res.status(404).json({ error: "Media not found" });
+        }
+        return;
       }
-    });
+
+      const rendersRoot = path.resolve(requestWorkspaceRoot, projectId, "renders");
+      const mediaPath = path.resolve(rendersRoot, filename);
+      const relativeToRenders = path.relative(rendersRoot, mediaPath);
+      if (relativeToRenders.startsWith("..") || path.isAbsolute(relativeToRenders)) {
+        res.status(404).json({ error: "Media not found" });
+        return;
+      }
+
+      setMediaNoCacheHeaders(res);
+      res.sendFile(mediaPath, (error) => {
+        if (error && !res.headersSent) {
+          res.status(404).json({ error: "Media not found" });
+        }
+      });
+    } catch (error) {
+      handleAccessError(error, res, next);
+    }
   });
   app.use("/api/projects", createProjectRouter({
     workspaceRoot,
@@ -100,7 +125,7 @@ export function createApp(options: CreateAppOptions = {}) {
     runExportJob: options.runExportJob,
     runYoutubePackageJob: options.runYoutubePackageJob,
     uploadFileSizeLimitBytes,
-    requireTenantAccess: options.requireTenantAccess
+    requireTenantAccess
   }));
 
   if (options.mediaFactorySaas?.enabled) {
@@ -132,4 +157,27 @@ function setMediaNoCacheHeaders(res: express.Response) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
+}
+
+function handleAccessError(error: unknown, res: express.Response, next: express.NextFunction) {
+  if (error instanceof PrymeiraTenantError) {
+    res.status(error.statusCode).json({ error: { code: error.code, message: error.message } });
+    return;
+  }
+
+  if (
+    error &&
+    typeof error === "object" &&
+    "statusCode" in error &&
+    "code" in error &&
+    "message" in error &&
+    typeof error.statusCode === "number" &&
+    typeof error.code === "string" &&
+    typeof error.message === "string"
+  ) {
+    res.status(error.statusCode).json({ error: { code: error.code, message: error.message } });
+    return;
+  }
+
+  next(error);
 }

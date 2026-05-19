@@ -21,5 +21,5 @@ const port = resolvePort();
 const app = createApp();
 
 app.listen(port, () => {
-  console.log(`AI editor API listening on http://localhost:${port}`);
+  console.log(`Media API listening on http://localhost:${port}`);
 });
