@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1045.0",
+    "@clerk/clerk-react": "^5.49.0",
+    "@prymeira/auth": "file:../Prymeira Account/packages/auth",
     "@remotion/bundler": "^4.0.457",
     "@remotion/google-fonts": "^4.0.462",
     "@remotion/renderer": "^4.0.457",

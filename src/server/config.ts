@@ -6,6 +6,8 @@ export type AppConfig = {
   ffprobePath: string;
   autoEditorPath: string;
   uploadFileSizeLimitBytes: number;
+  prymeiraAccountApiUrl: string | null;
+  prymeiraProductKey: string;
 };
 
 const DEFAULT_UPLOAD_FILE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024 * 1024;
@@ -22,12 +24,19 @@ function parseUploadFileSizeLimit(rawLimit = process.env.AI_EDITOR_UPLOAD_LIMIT_
   return limit;
 }
 
+function normalizeOptionalUrl(rawUrl = process.env.PRYMEIRA_ACCOUNT_API_URL) {
+  const trimmed = rawUrl?.trim();
+  return trimmed ? trimmed.replace(/\/$/, "") : null;
+}
+
 export function getConfig(): AppConfig {
   return {
     workspaceRoot: path.resolve(process.env.AI_EDITOR_WORKSPACE ?? path.resolve(process.cwd(), "workspace")),
     ffmpegPath: process.env.FFMPEG_PATH ?? "ffmpeg",
     ffprobePath: process.env.FFPROBE_PATH ?? "ffprobe",
     autoEditorPath: process.env.AUTO_EDITOR_PATH ?? "auto-editor",
-    uploadFileSizeLimitBytes: parseUploadFileSizeLimit()
+    uploadFileSizeLimitBytes: parseUploadFileSizeLimit(),
+    prymeiraAccountApiUrl: normalizeOptionalUrl(),
+    prymeiraProductKey: process.env.PRYMEIRA_PRODUCT_KEY?.trim() || "media"
   };
 }
