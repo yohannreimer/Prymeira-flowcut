@@ -58,6 +58,7 @@ export function createJobStore() {
     getForWorkspace(id: string, workspaceId: string) {
       const job = jobs.get(id);
       if (!job) return null;
+      // Null workspaceId is legacy unscoped data kept readable until all callers create tenant-scoped jobs.
       if (job.workspaceId && job.workspaceId !== workspaceId) return null;
       return cloneJob(job);
     },

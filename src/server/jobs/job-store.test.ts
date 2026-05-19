@@ -31,6 +31,14 @@ describe("createJobStore", () => {
     expect(jobs.getForWorkspace(created.id, "workspace_123")).toMatchObject({ id: created.id });
     expect(jobs.getForWorkspace(created.id, "workspace_other")).toBeNull();
   });
+
+  it("keeps legacy unscoped jobs visible to scoped lookups", () => {
+    const jobs = createJobStore();
+    const created = jobs.create({ projectId: "project_123", sourcePath: "/tmp/source.mp4" });
+
+    expect(created.workspaceId).toBeNull();
+    expect(jobs.getForWorkspace(created.id, "workspace_123")).toMatchObject({ id: created.id });
+  });
 });
 
 const invalidUpdate: JobUpdate = {
