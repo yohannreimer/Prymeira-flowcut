@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  configureApiAuth,
   deleteProject,
   exportProject,
   fetchEditPlan,
@@ -11,6 +12,7 @@ import {
   generateCaptions,
   generateYoutubePackage,
   listProjects,
+  publishYoutubeVideo,
   rerenderProject,
   updateCaption,
   updateCaptionSettings,
@@ -20,9 +22,55 @@ import {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  configureApiAuth(null);
 });
 
 describe("api client", () => {
+  it("attaches the configured Clerk bearer token to JSON requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ projects: [] }), {
+      headers: { "content-type": "application/json" }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    configureApiAuth(() => "clerk-token-123");
+
+    await listProjects();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/projects", expect.objectContaining({
+      headers: { Authorization: "Bearer clerk-token-123" }
+    }));
+  });
+
+  it("preserves caller headers while attaching auth", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      job: {
+        id: "job_motion",
+        projectId: "project_123",
+        status: "queued",
+        stage: "motion_queued",
+        message: "AI motion accepted",
+        sourcePath: "/tmp/source.mov",
+        outputPath: null,
+        outputUrl: null,
+        planPath: null,
+        warnings: [],
+        error: null
+      }
+    }), {
+      headers: { "content-type": "application/json" }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    configureApiAuth(async () => "clerk-token-123");
+
+    await generateAIMotion("project_123");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/projects/project_123/motion", expect.objectContaining({
+      headers: {
+        "content-type": "application/json",
+        Authorization: "Bearer clerk-token-123"
+      }
+    }));
+  });
+
   it("lists projects from the local library endpoint", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       projects: [
@@ -483,5 +531,38 @@ describe("api client", () => {
     })));
 
     await expect(fetchPublishReadiness("project_123")).resolves.toEqual({ status: "ready", checks: [] });
+  });
+
+  it("publishes the final export to YouTube", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      publication: {
+        externalId: "video_123",
+        url: "https://www.youtube.com/watch?v=video_123"
+      }
+    }), {
+      headers: { "content-type": "application/json" }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(publishYoutubeVideo("project_123", {
+      title: "Titulo final",
+      description: "Descricao final",
+      privacyStatus: "unlisted",
+      thumbnailName: "thumbnail-generated-01.png"
+    })).resolves.toEqual({
+      externalId: "video_123",
+      url: "https://www.youtube.com/watch?v=video_123"
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/projects/project_123/youtube-publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Titulo final",
+        description: "Descricao final",
+        privacyStatus: "unlisted",
+        thumbnailName: "thumbnail-generated-01.png"
+      })
+    });
   });
 });

@@ -88,6 +88,14 @@ type UploadVideoOptions = {
   cutPresetId?: CutPresetId;
 };
 
+type ApiAuthTokenProvider = (() => Promise<string | null> | string | null) | null;
+
+let authTokenProvider: ApiAuthTokenProvider = null;
+
+export function configureApiAuth(provider: ApiAuthTokenProvider): void {
+  authTokenProvider = provider;
+}
+
 export async function listProjects(options: FetchOptions = {}): Promise<ProjectLibraryItem[]> {
   const response = await request("/api/projects", { signal: options.signal });
   if (!response.ok) throw new Error(await readErrorMessage(response));
@@ -287,6 +295,32 @@ export async function fetchPublishReadiness(projectId: string): Promise<PublishR
   return data.publishReadiness;
 }
 
+export type PublishYoutubeVideoInput = {
+  title: string;
+  description: string;
+  privacyStatus: "private" | "unlisted" | "public";
+  thumbnailName?: string | null;
+};
+
+export type PublishYoutubeVideoResult = {
+  externalId: string;
+  url: string;
+};
+
+export async function publishYoutubeVideo(
+  projectId: string,
+  input: PublishYoutubeVideoInput
+): Promise<PublishYoutubeVideoResult> {
+  const response = await request(`/api/projects/${encodeURIComponent(projectId)}/youtube-publish`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new Error(await readErrorMessage(response));
+  const data = await response.json();
+  return data.publication;
+}
+
 export function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
@@ -299,9 +333,14 @@ export function formatBytes(bytes: number) {
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
-async function request(input: RequestInfo | URL, init?: RequestInit) {
+async function request(input: RequestInfo | URL, init: RequestInit = {}) {
   try {
-    return await fetch(input, init);
+    const token = authTokenProvider ? await authTokenProvider() : null;
+    const headers = mergeRequestHeaders(init.headers, token);
+    return await fetch(input, {
+      ...init,
+      ...(Object.keys(headers).length > 0 ? { headers } : {})
+    });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw error;
@@ -310,6 +349,27 @@ async function request(input: RequestInfo | URL, init?: RequestInit) {
       "Nao consegui conectar na API local em localhost:4317. Confere se o servidor ainda esta rodando e tenta de novo."
     );
   }
+}
+
+function mergeRequestHeaders(headersInit: HeadersInit | undefined, token: string | null): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (headersInit instanceof Headers) {
+    headersInit.forEach((value, key) => {
+      headers[key] = value;
+    });
+  } else if (Array.isArray(headersInit)) {
+    for (const [key, value] of headersInit) {
+      headers[key] = value;
+    }
+  } else if (headersInit) {
+    Object.assign(headers, headersInit);
+  }
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return headers;
 }
 
 async function readErrorMessage(response: Response) {
