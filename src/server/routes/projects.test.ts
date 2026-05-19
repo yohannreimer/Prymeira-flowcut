@@ -25,6 +25,14 @@ function tenantAccess(workspaceId = "workspace_123") {
   });
 }
 
+function missingTenantAccess() {
+  return vi.fn().mockRejectedValue({
+    statusCode: 401,
+    code: "missing_auth_token",
+    message: "Missing Clerk bearer token."
+  });
+}
+
 describe("project routes", () => {
   it("lists project directories with plan metadata and derived artifacts", async () => {
     await withTempDir("ai-editor-route-", async (dir) => {
@@ -180,11 +188,7 @@ describe("project routes", () => {
 
   it("returns 401 when tenant auth is configured and the token is missing", async () => {
     await withTempDir("ai-editor-route-missing-token-", async (dir) => {
-      const requireTenantAccess = vi.fn().mockRejectedValue({
-        statusCode: 401,
-        code: "missing_auth_token",
-        message: "Missing Clerk bearer token."
-      });
+      const requireTenantAccess = missingTenantAccess();
       const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false, requireTenantAccess });
 
       const response = await request(app).get("/api/projects");
@@ -196,6 +200,35 @@ describe("project routes", () => {
           message: "Missing Clerk bearer token."
         }
       });
+    });
+  });
+
+  it("returns 401 before accepting an uploaded project when the tenant token is missing", async () => {
+    await withTempDir("ai-editor-route-missing-token-upload-", async (dir) => {
+      const fixture = path.join(dir, "sample.mp4");
+      await writeFile(fixture, Buffer.from("fake mp4"));
+      const requireTenantAccess = missingTenantAccess();
+      const app = createApp({
+        workspaceRoot: dir,
+        jobs: createJobStore(),
+        runJobs: false,
+        requireTenantAccess,
+        uploadFileSizeLimitBytes: 1
+      });
+
+      const response = await request(app)
+        .post("/api/projects")
+        .attach("video", fixture);
+
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual({
+        error: {
+          code: "missing_auth_token",
+          message: "Missing Clerk bearer token."
+        }
+      });
+      expect(requireTenantAccess).toHaveBeenCalledWith(undefined);
+      await expect(access(path.join(dir, "workspaces"))).rejects.toMatchObject({ code: "ENOENT" });
     });
   });
 
@@ -575,6 +608,35 @@ describe("project routes", () => {
     });
   });
 
+  it("returns 401 before accepting uploaded music when the tenant token is missing", async () => {
+    await withTempDir("ai-editor-route-missing-token-music-", async (dir) => {
+      const fixture = path.join(dir, "music.mp3");
+      await writeFile(fixture, Buffer.from("fake mp3"));
+      const requireTenantAccess = missingTenantAccess();
+      const app = createApp({
+        workspaceRoot: dir,
+        jobs: createJobStore(),
+        runJobs: false,
+        requireTenantAccess,
+        uploadFileSizeLimitBytes: 1
+      });
+
+      const response = await request(app)
+        .post("/api/projects/project_123/music")
+        .attach("music", fixture);
+
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual({
+        error: {
+          code: "missing_auth_token",
+          message: "Missing Clerk bearer token."
+        }
+      });
+      expect(requireTenantAccess).toHaveBeenCalledWith(undefined);
+      await expect(access(path.join(dir, "workspaces"))).rejects.toMatchObject({ code: "ENOENT" });
+    });
+  });
+
   it("returns a media URL for rendered job output inside the project renders directory", async () => {
     await withTempDir("ai-editor-route-", async (dir) => {
       const jobs = createJobStore();
@@ -592,6 +654,25 @@ describe("project routes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body.job.outputUrl).toBe("/media/project_123/rough%20cut.mp4");
+    });
+  });
+
+  it("does not expose unscoped legacy jobs to authenticated tenant requests", async () => {
+    await withTempDir("ai-editor-route-tenant-job-", async (dir) => {
+      const jobs = createJobStore();
+      const job = jobs.create({
+        projectId: "project_123",
+        sourcePath: path.join(dir, "project_123", "uploads", "source.mp4")
+      });
+      const requireTenantAccess = tenantAccess();
+      const app = createApp({ workspaceRoot: dir, jobs, runJobs: false, requireTenantAccess });
+
+      const response = await request(app)
+        .get(`/api/projects/jobs/${job.id}`)
+        .set("Authorization", "Bearer clerk-token");
+
+      expect(response.status).toBe(404);
+      expect(response.body.error).toBe("Job not found");
     });
   });
 

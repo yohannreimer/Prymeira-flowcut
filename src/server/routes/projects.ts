@@ -124,9 +124,18 @@ export function createProjectRouter(options: ProjectRouteOptions) {
     };
   }
 
-  router.get("/", async (req, res, next) => {
+  router.use(async (req, res, next) => {
     try {
-      const context = await resolveRouteContext(req);
+      res.locals.projectRouteContext = await resolveRouteContext(req);
+      next();
+    } catch (error) {
+      handleTenantError(error, res, next);
+    }
+  });
+
+  router.get("/", async (_req, res, next) => {
+    try {
+      const context = getRouteContext(res);
       const projects = await listProjectLibrary(context.workspaceRoot);
       res.json({ projects });
     } catch (error) {
@@ -158,7 +167,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const projectId = `project_${crypto.randomUUID()}`;
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const safeExt = getSafeSourceExtension(req.file.originalname);
@@ -208,7 +217,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const planPath = path.join(context.workspaceRoot, projectId, "edit-plan.json");
       const plan = editPlanSchema.parse(JSON.parse(await readFile(planPath, "utf8")));
       res.json({ plan: serializePlan(plan) });
@@ -228,7 +237,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       await rm(path.join(context.workspaceRoot, projectId), { recursive: true, force: true });
       res.status(204).end();
     } catch (error) {
@@ -251,7 +260,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(400).json({ error: "Missing music file" });
         return;
       }
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const safeExt = getSafeSourceExtension(req.file.originalname);
       const musicPath = path.join(workspace.uploads, `music${safeExt}`);
@@ -280,7 +289,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       const job = options.jobs.create({
@@ -335,7 +344,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       const knownCutIds = new Set(plan.removed.map((cut) => cut.id));
@@ -397,7 +406,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(400).json({ error: "Invalid caption style" });
         return;
       }
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       const job = options.jobs.create({
@@ -438,7 +447,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       const job = options.jobs.create({
@@ -484,7 +493,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       const job = options.jobs.create({
@@ -531,7 +540,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const summary = await readYoutubePackageSummary(workspace.root, projectId);
       res.json({ summary });
@@ -548,7 +557,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const summary = await readYoutubePackageSummary(workspace.root, projectId);
       if (!summary.assets.some((asset) => asset.name === assetName)) {
@@ -580,7 +589,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const credentials = getYouTubeCredentialsFromEnv();
       if (!credentials) {
         res.status(400).json({
@@ -638,7 +647,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       const nextSettings = captionSettingsSchema.parse({ ...plan.captionSettings, ...patchResult.data });
@@ -667,7 +676,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       let found = false;
@@ -710,7 +719,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       let found = false;
@@ -744,7 +753,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const context = await resolveRouteContext(req);
+      const context = getRouteContext(res);
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       const publishReadiness = assessPublishReadiness(plan, {
@@ -765,10 +774,12 @@ export function createProjectRouter(options: ProjectRouteOptions) {
 
   router.get("/jobs/:jobId", async (req, res, next) => {
     try {
-      const context = await resolveRouteContext(req);
-      const job = context.tenant
-        ? options.jobs.getForWorkspace(req.params.jobId, context.tenant.workspaceId)
-        : options.jobs.get(req.params.jobId);
+      const context = getRouteContext(res);
+      const job = options.jobs.get(req.params.jobId);
+      if (context.tenant && job?.workspaceId !== context.tenant.workspaceId) {
+        res.status(404).json({ error: "Job not found" });
+        return;
+      }
       if (!job) {
         res.status(404).json({ error: "Job not found" });
         return;
@@ -780,6 +791,10 @@ export function createProjectRouter(options: ProjectRouteOptions) {
   });
 
   return router;
+}
+
+function getRouteContext(res: express.Response): ProjectRouteContext {
+  return res.locals.projectRouteContext as ProjectRouteContext;
 }
 
 function handleTenantError(error: unknown, res: express.Response, next: express.NextFunction) {
