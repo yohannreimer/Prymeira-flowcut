@@ -9,7 +9,7 @@ function createTestApp() {
   const repo = new InMemoryUploadSessionRepository();
   const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
     allowed: true,
-    product_key: "mediafactory",
+    product_key: "media",
     workspace_id: "workspace_123",
     product_role: "admin",
     status: "active",

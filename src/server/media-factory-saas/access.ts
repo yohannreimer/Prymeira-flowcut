@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const MEDIA_FACTORY_PRODUCT_KEY = "mediafactory";
+export const MEDIA_FACTORY_PRODUCT_KEY = "media";
 
 const mediaFactoryAccessDecisionSchema = z.object({
   allowed: z.boolean(),

@@ -18,10 +18,10 @@ describe("getBearerToken", () => {
 });
 
 describe("requireMediaFactoryAccess", () => {
-  it("returns workspace context when Account API allows the mediafactory product", async () => {
+  it("returns workspace context when Account API allows the media product", async () => {
     const decision: MediaFactoryAccessDecision = {
       allowed: true,
-      product_key: "mediafactory",
+      product_key: "media",
       workspace_id: "workspace_123",
       workspace_role: "owner",
       product_role: "admin",
@@ -48,7 +48,7 @@ describe("requireMediaFactoryAccess", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://account-api.test/access-check?product_key=mediafactory",
+      "https://account-api.test/access-check?product_key=media",
       { headers: { Authorization: "Bearer clerk-token-123" } }
     );
   });
@@ -69,7 +69,7 @@ describe("requireMediaFactoryAccess", () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
         allowed: false,
-        product_key: "mediafactory",
+        product_key: "media",
         status: "locked",
         reason: "no_entitlement"
       }), { status: 200 })
@@ -91,7 +91,7 @@ describe("requireMediaFactoryAccess", () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
         allowed: true,
-        product_key: "mediafactory",
+        product_key: "media",
         status: "active",
         reason: "active_entitlement"
       }), { status: 200 })
@@ -128,7 +128,7 @@ describe("requireMediaFactoryAccess", () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
         allowed: true,
-        product_key: "mediafactory",
+        product_key: "media",
         workspace_id: 123,
         status: "active",
         reason: "active_entitlement"
