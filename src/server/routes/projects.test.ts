@@ -2,10 +2,28 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { setImmediate as waitForBackgroundJob } from "node:timers/promises";
 import path from "node:path";
 import request from "supertest";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { createJobStore } from "../jobs/job-store";
 import { withTempDir } from "../../test/fixtures";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+
+function tenantAccess(workspaceId = "workspace_123") {
+  const token = "clerk-token";
+  return vi.fn().mockResolvedValue({
+    token,
+    workspaceId,
+    workspaceRole: "owner",
+    productKey: "media",
+    productRole: "admin",
+    plan: "pro",
+    limits: {}
+  });
+}
 
 describe("project routes", () => {
   it("lists project directories with plan metadata and derived artifacts", async () => {
@@ -66,6 +84,50 @@ describe("project routes", () => {
     });
   });
 
+  it("lists projects from the authorized tenant workspace", async () => {
+    await withTempDir("ai-editor-route-tenant-list-", async (dir) => {
+      const projectId = "project_123";
+      const tenantProjectsRoot = path.join(dir, "workspaces", "workspace_123", "projects");
+      const projectRoot = path.join(tenantProjectsRoot, projectId);
+      await mkdir(projectRoot, { recursive: true });
+      await writeFile(path.join(projectRoot, "edit-plan.json"), JSON.stringify({
+        id: "plan_project_123",
+        projectId,
+        version: 1,
+        source: {
+          path: "/uploads/source.mp4",
+          durationSec: 10,
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          hasAudio: true
+        },
+        segments: [
+          { id: "seg_1", sourceStartSec: 0, sourceEndSec: 10, timelineStartSec: 0, timelineEndSec: 10, reason: "kept speech/content" }
+        ],
+        removed: [],
+        captions: [],
+        overlays: [],
+        color: { presetId: "neutral", label: "Neutral" },
+        audio: { music: null, voiceTargetLufs: -16 },
+        qa: { status: "passed", warnings: [] },
+        createdAt: "2026-05-05T00:00:00.000Z"
+      }));
+      const requireTenantAccess = tenantAccess();
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false, requireTenantAccess });
+
+      const response = await request(app)
+        .get("/api/projects")
+        .set("Authorization", "Bearer clerk-token");
+
+      expect(response.status).toBe(200);
+      expect(response.body.projects).toEqual([
+        expect.objectContaining({ id: projectId })
+      ]);
+      expect(requireTenantAccess).toHaveBeenCalledWith("Bearer clerk-token");
+    });
+  });
+
   it("lists project directories without plans as missing plan placeholders", async () => {
     await withTempDir("ai-editor-route-", async (dir) => {
       await mkdir(path.join(dir, "project_empty"), { recursive: true });
@@ -87,6 +149,53 @@ describe("project routes", () => {
           versions: []
         })
       ]);
+    });
+  });
+
+  it("creates uploaded projects under the authorized tenant workspace", async () => {
+    await withTempDir("ai-editor-route-tenant-upload-", async (dir) => {
+      const fixture = path.join(dir, "sample.mp4");
+      await writeFile(fixture, Buffer.from("fake mp4"));
+      const requireTenantAccess = tenantAccess();
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false, requireTenantAccess });
+
+      const response = await request(app)
+        .post("/api/projects")
+        .set("Authorization", "Bearer clerk-token")
+        .attach("video", fixture);
+
+      expect(response.status).toBe(201);
+      expect(response.body.projectId).toMatch(/^project_/);
+      await expect(access(path.join(
+        dir,
+        "workspaces",
+        "workspace_123",
+        "projects",
+        response.body.projectId,
+        "uploads",
+        "source.mp4"
+      ))).resolves.toBeUndefined();
+    });
+  });
+
+  it("returns 401 when tenant auth is configured and the token is missing", async () => {
+    await withTempDir("ai-editor-route-missing-token-", async (dir) => {
+      const requireTenantAccess = vi.fn().mockRejectedValue({
+        statusCode: 401,
+        code: "missing_auth_token",
+        message: "Missing Clerk bearer token."
+      });
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false, requireTenantAccess });
+
+      const response = await request(app).get("/api/projects");
+
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual({
+        error: {
+          code: "missing_auth_token",
+          message: "Missing Clerk bearer token."
+        }
+      });
     });
   });
 
@@ -1039,6 +1148,95 @@ describe("project routes", () => {
       expect(response.status).toBe(200);
       expect(response.body.publishReadiness.status).toBe("ready");
       expect(response.body.publishReadiness.checks.some((check: { id: string }) => check.id === "latest_export")).toBe(false);
+    });
+  });
+
+  it("publishes the final export to YouTube with edited metadata and selected thumbnail", async () => {
+    await withTempDir("ai-editor-route-youtube-publish-", async (dir) => {
+      vi.stubEnv("YOUTUBE_CLIENT_ID", "client-id");
+      vi.stubEnv("YOUTUBE_CLIENT_SECRET", "client-secret");
+      vi.stubEnv("YOUTUBE_REFRESH_TOKEN", "refresh-token");
+
+      const projectId = "project_123";
+      const projectRoot = path.join(dir, projectId);
+      const rendersRoot = path.join(projectRoot, "renders");
+      const packageRoot = path.join(projectRoot, "download", "youtube-package");
+      await mkdir(rendersRoot, { recursive: true });
+      await mkdir(packageRoot, { recursive: true });
+      await writeFile(path.join(rendersRoot, "youtube-edit.mp4"), Buffer.from("final export"));
+      await writeFile(path.join(rendersRoot, "preview-sample.mp4"), Buffer.from("newer preview export"));
+      await writeFile(path.join(packageRoot, "title.txt"), "Titulo gerado");
+      await writeFile(path.join(packageRoot, "description.txt"), "Descricao gerada");
+      await writeFile(path.join(packageRoot, "chapters.txt"), "00:00 Inicio\n00:30 Ideia principal\n");
+      await writeFile(path.join(packageRoot, "tags.txt"), "PROCESSO\nREAL\nBASTIDOR\n");
+      await writeFile(path.join(packageRoot, "thumbnail-generated-01.png"), Buffer.from("thumbnail"));
+      await writeFile(path.join(projectRoot, "edit-plan.json"), JSON.stringify({
+        id: "plan_project_123",
+        projectId,
+        version: 1,
+        source: {
+          path: "/tmp/source.mov",
+          durationSec: 10,
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          hasAudio: true
+        },
+        segments: [
+          { id: "seg_1", sourceStartSec: 0, sourceEndSec: 10, timelineStartSec: 0, timelineEndSec: 10, reason: "kept speech/content" }
+        ],
+        removed: [],
+        sections: [],
+        captions: [],
+        captionSettings: { enabled: false },
+        overlays: [],
+        color: { presetId: "neutral", label: "Neutral" },
+        audio: { music: null, voiceTargetLufs: -16 },
+        qa: { status: "passed", warnings: [] },
+        createdAt: "2026-05-05T00:00:00.000Z"
+      }));
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "access-123" }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, {
+          status: 200,
+          headers: { location: "https://upload.youtube.test/session" }
+        }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ id: "video-123" }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ kind: "youtube#thumbnailSetResponse" }), { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
+
+      const response = await request(app)
+        .post(`/api/projects/${projectId}/youtube-publish`)
+        .send({
+          title: "Titulo editado",
+          description: "Descricao editada",
+          privacyStatus: "unlisted",
+          thumbnailName: "thumbnail-generated-01.png"
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.publication).toEqual({
+        externalId: "video-123",
+        url: "https://www.youtube.com/watch?v=video-123"
+      });
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toMatchObject({
+        snippet: {
+          title: "Titulo editado",
+          description: "Descricao editada\n\nCapítulos\n00:00 Inicio\n00:30 Ideia principal",
+          tags: ["PROCESSO", "REAL", "BASTIDOR"]
+        },
+        status: {
+          privacyStatus: "unlisted"
+        }
+      });
+      expect(fetchMock.mock.calls[1][1].headers).toMatchObject({
+        "x-upload-content-length": String(Buffer.byteLength("final export"))
+      });
+      expect(fetchMock.mock.calls[3][0].toString()).toBe(
+        "https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=video-123"
+      );
     });
   });
 

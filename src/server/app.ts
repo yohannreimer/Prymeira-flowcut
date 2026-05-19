@@ -10,6 +10,7 @@ import type { RunMotionJobInput } from "./jobs/run-motion-job";
 import type { RunProjectJobInput } from "./jobs/run-project-job";
 import type { RunYoutubePackageJobInput } from "./jobs/run-youtube-package-job";
 import { InMemoryUploadSessionRepository } from "./media-factory-saas/upload-sessions";
+import type { PrymeiraTenantContext } from "./prymeira/tenant";
 import {
   createMediaFactorySaasRouter,
   type MediaFactoryObjectStorage
@@ -36,6 +37,7 @@ export type CreateAppOptions = {
   runExportJob?: (input: RunExportJobInput) => Promise<void>;
   runYoutubePackageJob?: (input: RunYoutubePackageJobInput) => Promise<void>;
   uploadFileSizeLimitBytes?: number;
+  requireTenantAccess?: (authorization: string | undefined) => Promise<PrymeiraTenantContext>;
   mediaFactorySaas?: MediaFactorySaasOptions;
 };
 
@@ -97,7 +99,8 @@ export function createApp(options: CreateAppOptions = {}) {
     runMotionJob: options.runMotionJob,
     runExportJob: options.runExportJob,
     runYoutubePackageJob: options.runYoutubePackageJob,
-    uploadFileSizeLimitBytes
+    uploadFileSizeLimitBytes,
+    requireTenantAccess: options.requireTenantAccess
   }));
 
   if (options.mediaFactorySaas?.enabled) {

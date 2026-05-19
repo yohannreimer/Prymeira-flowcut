@@ -1,4 +1,4 @@
-import { copyFile, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
+import { copyFile, readFile, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import express from "express";
@@ -29,6 +29,8 @@ import { runMotionJob, type RunMotionJobInput } from "../jobs/run-motion-job";
 import { runProjectJob, type RunProjectJobInput } from "../jobs/run-project-job";
 import { runYoutubePackageJob, type RunYoutubePackageJobInput } from "../jobs/run-youtube-package-job";
 import type { ProjectJob } from "../jobs/job-store";
+import { getYouTubeCredentialsFromEnv, publishYouTubeVideo } from "../media-factory/youtube-publisher";
+import { PrymeiraTenantError, getTenantProjectRoot, type PrymeiraTenantContext } from "../prymeira/tenant";
 import { assessPublishReadiness } from "../qa/publish-readiness";
 import { isYoutubePackageAssetName, readYoutubePackageSummary } from "../youtube/youtube-package-summary";
 
@@ -47,6 +49,12 @@ const captionPatchSchema = z
     message: "caption patch must include text or styleId"
   });
 const captionSettingsPatchSchema = captionSettingsSchema.partial();
+const youtubePublishRequestSchema = z.object({
+  title: z.string().trim().min(1).max(100),
+  description: z.string().max(5000).default(""),
+  privacyStatus: z.enum(["private", "unlisted", "public"]).default("private"),
+  thumbnailName: z.string().nullable().optional()
+}).strict();
 const sectionMotionTreatmentPatchSchema = z.object({
   enabled: z.boolean().optional(),
   slots: z.array(sectionMotionSlotSchema).optional()
@@ -79,6 +87,12 @@ export type ProjectRouteOptions = {
   runExportJob?: (input: RunExportJobInput) => Promise<void>;
   runYoutubePackageJob?: (input: RunYoutubePackageJobInput) => Promise<void>;
   uploadFileSizeLimitBytes?: number;
+  requireTenantAccess?: (authorization: string | undefined) => Promise<PrymeiraTenantContext>;
+};
+
+type ProjectRouteContext = {
+  workspaceRoot: string;
+  tenant: PrymeiraTenantContext | null;
 };
 
 export function createProjectRouter(options: ProjectRouteOptions) {
@@ -98,12 +112,25 @@ export function createProjectRouter(options: ProjectRouteOptions) {
   const exportJobRunner = options.runExportJob ?? runExportJob;
   const youtubePackageJobRunner = options.runYoutubePackageJob ?? runYoutubePackageJob;
 
-  router.get("/", async (_req, res, next) => {
+  async function resolveRouteContext(req: express.Request): Promise<ProjectRouteContext> {
+    if (!options.requireTenantAccess) {
+      return { workspaceRoot: options.workspaceRoot, tenant: null };
+    }
+
+    const tenant = await options.requireTenantAccess(req.get("authorization"));
+    return {
+      workspaceRoot: getTenantProjectRoot(options.workspaceRoot, tenant.workspaceId),
+      tenant
+    };
+  }
+
+  router.get("/", async (req, res, next) => {
     try {
-      const projects = await listProjectLibrary(options.workspaceRoot);
+      const context = await resolveRouteContext(req);
+      const projects = await listProjectLibrary(context.workspaceRoot);
       res.json({ projects });
     } catch (error) {
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -131,8 +158,9 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
+      const context = await resolveRouteContext(req);
       const projectId = `project_${crypto.randomUUID()}`;
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const safeExt = getSafeSourceExtension(req.file.originalname);
       const sourcePath = path.join(workspace.uploads, `source${safeExt}`);
 
@@ -142,7 +170,11 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         await unlink(req.file.path).catch(() => undefined);
       }
 
-      const job = options.jobs.create({ projectId, sourcePath });
+      const job = options.jobs.create({
+        projectId,
+        sourcePath,
+        workspaceId: context.tenant?.workspaceId ?? null
+      });
 
       if (options.runJobs) {
         void Promise.resolve().then(() => projectJobRunner({
@@ -162,9 +194,9 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         });
       }
 
-      res.status(201).json({ projectId, job: serializeJob(job, options.workspaceRoot) });
+      res.status(201).json({ projectId, job: serializeJob(job, context.workspaceRoot) });
     } catch (error) {
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -176,7 +208,8 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const planPath = path.join(options.workspaceRoot, projectId, "edit-plan.json");
+      const context = await resolveRouteContext(req);
+      const planPath = path.join(context.workspaceRoot, projectId, "edit-plan.json");
       const plan = editPlanSchema.parse(JSON.parse(await readFile(planPath, "utf8")));
       res.json({ plan: serializePlan(plan) });
     } catch (error) {
@@ -184,7 +217,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(404).json({ error: "Plan not found" });
         return;
       }
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -195,10 +228,11 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      await rm(path.join(options.workspaceRoot, projectId), { recursive: true, force: true });
+      const context = await resolveRouteContext(req);
+      await rm(path.join(context.workspaceRoot, projectId), { recursive: true, force: true });
       res.status(204).end();
     } catch (error) {
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -217,7 +251,8 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(400).json({ error: "Missing music file" });
         return;
       }
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const context = await resolveRouteContext(req);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const safeExt = getSafeSourceExtension(req.file.originalname);
       const musicPath = path.join(workspace.uploads, `music${safeExt}`);
       try {
@@ -227,7 +262,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
       }
       res.status(201).json({ musicPath });
     } catch (error) {
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -245,9 +280,14 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const context = await resolveRouteContext(req);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
-      const job = options.jobs.create({ projectId, sourcePath: plan.source.path });
+      const job = options.jobs.create({
+        projectId,
+        sourcePath: plan.source.path,
+        workspaceId: context.tenant?.workspaceId ?? null
+      });
       const queuedJob = options.jobs.update(job.id, {
         stage: "export_queued",
         message: "Export accepted",
@@ -271,13 +311,13 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         });
       }
 
-      res.status(202).json({ job: serializeJob(queuedJob, options.workspaceRoot) });
+      res.status(202).json({ job: serializeJob(queuedJob, context.workspaceRoot) });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -295,7 +335,8 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const context = await resolveRouteContext(req);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       const knownCutIds = new Set(plan.removed.map((cut) => cut.id));
       const activeCutIds = renderRequest.data.activeCuts?.map((cut) => cut.id) ?? renderRequest.data.activeCutIds ?? [];
@@ -304,7 +345,11 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const job = options.jobs.create({ projectId, sourcePath: plan.source.path });
+      const job = options.jobs.create({
+        projectId,
+        sourcePath: plan.source.path,
+        workspaceId: context.tenant?.workspaceId ?? null
+      });
       if (options.runJobs) {
         void Promise.resolve().then(() => manualRenderJobRunner({
           jobId: job.id,
@@ -330,13 +375,13 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         });
       }
 
-      res.status(202).json({ job: serializeJob(job, options.workspaceRoot) });
+      res.status(202).json({ job: serializeJob(job, context.workspaceRoot) });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -352,9 +397,14 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(400).json({ error: "Invalid caption style" });
         return;
       }
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const context = await resolveRouteContext(req);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
-      const job = options.jobs.create({ projectId, sourcePath: plan.source.path });
+      const job = options.jobs.create({
+        projectId,
+        sourcePath: plan.source.path,
+        workspaceId: context.tenant?.workspaceId ?? null
+      });
       if (options.runJobs) {
         void Promise.resolve().then(() => captionJobRunner({
           jobId: job.id,
@@ -371,13 +421,13 @@ export function createProjectRouter(options: ProjectRouteOptions) {
           });
         });
       }
-      res.status(202).json({ job: serializeJob(job, options.workspaceRoot) });
+      res.status(202).json({ job: serializeJob(job, context.workspaceRoot) });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -388,9 +438,14 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const context = await resolveRouteContext(req);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
-      const job = options.jobs.create({ projectId, sourcePath: plan.source.path });
+      const job = options.jobs.create({
+        projectId,
+        sourcePath: plan.source.path,
+        workspaceId: context.tenant?.workspaceId ?? null
+      });
       const queuedJob = options.jobs.update(job.id, {
         stage: "motion_queued",
         message: "AI motion accepted",
@@ -412,13 +467,13 @@ export function createProjectRouter(options: ProjectRouteOptions) {
           });
         });
       }
-      res.status(202).json({ job: serializeJob(queuedJob, options.workspaceRoot) });
+      res.status(202).json({ job: serializeJob(queuedJob, context.workspaceRoot) });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -429,9 +484,14 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const context = await resolveRouteContext(req);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
-      const job = options.jobs.create({ projectId, sourcePath: plan.source.path });
+      const job = options.jobs.create({
+        projectId,
+        sourcePath: plan.source.path,
+        workspaceId: context.tenant?.workspaceId ?? null
+      });
       const queuedJob = options.jobs.update(job.id, {
         stage: "youtube_package_queued",
         message: "YouTube package accepted",
@@ -453,13 +513,13 @@ export function createProjectRouter(options: ProjectRouteOptions) {
           });
         });
       }
-      res.status(202).json({ job: serializeJob(queuedJob, options.workspaceRoot) });
+      res.status(202).json({ job: serializeJob(queuedJob, context.workspaceRoot) });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -471,11 +531,12 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const context = await resolveRouteContext(req);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const summary = await readYoutubePackageSummary(workspace.root, projectId);
       res.json({ summary });
     } catch (error) {
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -487,7 +548,8 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const context = await resolveRouteContext(req);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const summary = await readYoutubePackageSummary(workspace.root, projectId);
       if (!summary.assets.some((asset) => asset.name === assetName)) {
         res.status(404).json({ error: "Asset not found" });
@@ -501,7 +563,65 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         }
       });
     } catch (error) {
-      next(error);
+      handleTenantError(error, res, next);
+    }
+  });
+
+  router.post("/:projectId/youtube-publish", async (req, res, next) => {
+    try {
+      const { projectId } = req.params;
+      if (!PROJECT_ID_PATTERN.test(projectId)) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      const bodyResult = youtubePublishRequestSchema.safeParse(req.body ?? {});
+      if (!bodyResult.success) {
+        res.status(400).json({ error: "Invalid YouTube publication payload" });
+        return;
+      }
+
+      const context = await resolveRouteContext(req);
+      const credentials = getYouTubeCredentialsFromEnv();
+      if (!credentials) {
+        res.status(400).json({
+          error: "Credenciais do YouTube ausentes. Configure YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET e YOUTUBE_REFRESH_TOKEN."
+        });
+        return;
+      }
+
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
+      const videoPath = await findLatestFinalExport(workspace.renders);
+      if (!videoPath) {
+        res.status(409).json({ error: "Gere o export final antes de publicar no YouTube." });
+        return;
+      }
+
+      const thumbnailPath = await resolveYoutubeThumbnailPath({
+        projectRoot: workspace.root,
+        projectId,
+        thumbnailName: bodyResult.data.thumbnailName ?? null
+      });
+      if (thumbnailPath === "invalid") {
+        res.status(400).json({ error: "Thumbnail selecionada nao encontrada no pacote YouTube." });
+        return;
+      }
+
+      const publication = await publishYouTubeVideo({
+        videoPath,
+        thumbnailPath,
+        title: bodyResult.data.title,
+        description: await composePublishedYouTubeDescription(workspace.root, bodyResult.data.description),
+        hashtags: await readYouTubePackageTags(workspace.root),
+        privacyStatus: bodyResult.data.privacyStatus,
+        credentials
+      });
+      res.json({ publication });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      handleTenantError(error, res, next);
     }
   });
 
@@ -518,7 +638,8 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const context = await resolveRouteContext(req);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       const nextSettings = captionSettingsSchema.parse({ ...plan.captionSettings, ...patchResult.data });
       const nextPlan = editPlanSchema.parse({ ...plan, captionSettings: nextSettings });
@@ -529,7 +650,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -546,7 +667,8 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const context = await resolveRouteContext(req);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       let found = false;
       const captions = plan.captions.map((caption) => {
@@ -571,7 +693,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -588,7 +710,8 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const context = await resolveRouteContext(req);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       let found = false;
       const sections = plan.sections.map((section) => {
@@ -609,7 +732,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
@@ -621,7 +744,8 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         return;
       }
 
-      const workspace = await createProjectWorkspace(options.workspaceRoot, projectId);
+      const context = await resolveRouteContext(req);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const plan = editPlanSchema.parse(JSON.parse(await readFile(workspace.planPath, "utf8")));
       const publishReadiness = assessPublishReadiness(plan, {
         hasLatestExport: await hasFinalExport(workspace.renders),
@@ -635,20 +759,50 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      next(error);
+      handleTenantError(error, res, next);
     }
   });
 
-  router.get("/jobs/:jobId", (req, res) => {
-    const job = options.jobs.get(req.params.jobId);
-    if (!job) {
-      res.status(404).json({ error: "Job not found" });
-      return;
+  router.get("/jobs/:jobId", async (req, res, next) => {
+    try {
+      const context = await resolveRouteContext(req);
+      const job = context.tenant
+        ? options.jobs.getForWorkspace(req.params.jobId, context.tenant.workspaceId)
+        : options.jobs.get(req.params.jobId);
+      if (!job) {
+        res.status(404).json({ error: "Job not found" });
+        return;
+      }
+      res.json({ job: serializeJob(job, context.workspaceRoot) });
+    } catch (error) {
+      handleTenantError(error, res, next);
     }
-    res.json({ job: serializeJob(job, options.workspaceRoot) });
   });
 
   return router;
+}
+
+function handleTenantError(error: unknown, res: express.Response, next: express.NextFunction) {
+  if (error instanceof PrymeiraTenantError) {
+    res.status(error.statusCode).json({ error: { code: error.code, message: error.message } });
+    return;
+  }
+
+  if (
+    error &&
+    typeof error === "object" &&
+    "statusCode" in error &&
+    "code" in error &&
+    "message" in error &&
+    typeof error.statusCode === "number" &&
+    typeof error.code === "string" &&
+    typeof error.message === "string"
+  ) {
+    res.status(error.statusCode).json({ error: { code: error.code, message: error.message } });
+    return;
+  }
+
+  next(error);
 }
 
 function serializePlan(plan: EditPlan) {
@@ -674,6 +828,76 @@ function serializePlan(plan: EditPlan) {
     qa: plan.qa,
     publishReadiness: plan.publishReadiness
   };
+}
+
+async function findLatestFinalExport(rendersPath: string): Promise<string | null> {
+  const entries = await readdir(rendersPath, { withFileTypes: true }).catch(() => []);
+  const candidates = await Promise.all(
+    entries
+      .filter((entry) =>
+        entry.isFile() &&
+        entry.name.toLowerCase().endsWith(".mp4") &&
+        isFinalExportFileName(entry.name)
+      )
+      .map(async (entry) => {
+        const filePath = path.join(rendersPath, entry.name);
+        return {
+          filePath,
+          mtimeMs: (await stat(filePath)).mtimeMs
+        };
+      })
+  );
+
+  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return candidates[0]?.filePath ?? null;
+}
+
+async function resolveYoutubeThumbnailPath({
+  projectRoot,
+  projectId,
+  thumbnailName
+}: {
+  projectRoot: string;
+  projectId: string;
+  thumbnailName: string | null;
+}): Promise<string | null | "invalid"> {
+  if (!thumbnailName) return null;
+  if (!isYoutubePackageAssetName(thumbnailName)) return "invalid";
+
+  const summary = await readYoutubePackageSummary(projectRoot, projectId);
+  const asset = summary.assets.find((item) => item.name === thumbnailName);
+  if (!asset || asset.kind === "identity_clip") return "invalid";
+  return path.join(projectRoot, "download", "youtube-package", thumbnailName);
+}
+
+async function composePublishedYouTubeDescription(projectRoot: string, description: string) {
+  const trimmedDescription = description.trim();
+  const chapters = await readOptionalYoutubePackageText(projectRoot, "chapters.txt");
+  if (!chapters) return trimmedDescription;
+  if (trimmedDescription.includes(chapters) || trimmedDescription.includes("Capítulos")) {
+    return trimmedDescription;
+  }
+  return `${trimmedDescription}\n\nCapítulos\n${chapters}`;
+}
+
+async function readYouTubePackageTags(projectRoot: string): Promise<string[]> {
+  const raw = await readOptionalYoutubePackageText(projectRoot, "tags.txt");
+  if (!raw) return [];
+  return Array.from(new Set(
+    raw
+      .split(/\r?\n|,/)
+      .map((tag) => tag.replace(/^#/, "").trim())
+      .filter(Boolean)
+  ));
+}
+
+async function readOptionalYoutubePackageText(projectRoot: string, fileName: string) {
+  try {
+    return (await readFile(path.join(projectRoot, "download", "youtube-package", fileName), "utf8")).trim();
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 function mergeSectionPatch(section: TimelineSection, patch: z.infer<typeof updateSectionRequestSchema>): TimelineSection {
@@ -704,8 +928,12 @@ async function hasFinalExport(rendersPath: string) {
   return entries.some((entry) =>
     entry.isFile() &&
     entry.name.toLowerCase().endsWith(".mp4") &&
-    entry.name !== "rough-cut.mp4"
+    isFinalExportFileName(entry.name)
   );
+}
+
+function isFinalExportFileName(name: string) {
+  return name !== "rough-cut.mp4" && name !== "preview-sample.mp4";
 }
 
 function serializeJob(job: ProjectJob, workspaceRoot: string) {
