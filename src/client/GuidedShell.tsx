@@ -22,7 +22,7 @@ export function deriveCurrentStep(
   hasCaptions: boolean,
   hasPackage: boolean
 ): 1 | 2 | 3 | 4 | 5 {
-  if (!file && !job && !isUploading) return 1;
+  if (!job && !isUploading) return 1;
   if (!hasCut) return 2;
   if (!hasCaptions) return 3;
   if (!hasPackage) return 4;
@@ -41,7 +41,7 @@ export function buildSidebarSteps(
   hasPackage: boolean,
   isPackageRunning: boolean
 ): SidebarStep[] {
-  const hasSomething = Boolean(file || job || isUploading);
+  const hasSomething = Boolean(job || isUploading);
   const captionCount = editPlan?.captions.length ?? 0;
 
   return [

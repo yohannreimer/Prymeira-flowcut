@@ -7,9 +7,9 @@ describe("deriveCurrentStep", () => {
     expect(deriveCurrentStep(null, null, false, false, false, false)).toBe(1);
   });
 
-  it("returns 2 when file is selected but no cut", () => {
+  it("returns 1 when file is selected but upload not started", () => {
     const file = new File([""], "test.mp4");
-    expect(deriveCurrentStep(file, null, false, false, false, false)).toBe(2);
+    expect(deriveCurrentStep(file, null, false, false, false, false)).toBe(1);
   });
 
   it("returns 2 when uploading even if nothing else is loaded", () => {
@@ -17,28 +17,29 @@ describe("deriveCurrentStep", () => {
   });
 
   it("returns 3 when cut is done but no captions", () => {
-    const file = new File([""], "test.mp4");
-    expect(deriveCurrentStep(file, null, false, true, false, false)).toBe(3);
+    // job must exist (upload completed) to advance past step 1
+    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as ProjectJob;
+    expect(deriveCurrentStep(null, mockJob, false, true, false, false)).toBe(3);
   });
 
   it("returns 4 when captions done but no package", () => {
-    const file = new File([""], "test.mp4");
-    expect(deriveCurrentStep(file, null, false, true, true, false)).toBe(4);
+    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as ProjectJob;
+    expect(deriveCurrentStep(null, mockJob, false, true, true, false)).toBe(4);
   });
 
   it("returns 5 when package is ready", () => {
-    const file = new File([""], "test.mp4");
-    expect(deriveCurrentStep(file, null, false, true, true, true)).toBe(5);
+    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as ProjectJob;
+    expect(deriveCurrentStep(null, mockJob, false, true, true, true)).toBe(5);
   });
 
-  it("prioritizes hasCut over file presence", () => {
-    const file = new File([""], "test.mp4");
-    expect(deriveCurrentStep(file, null, false, true, false, false)).toBe(3);
+  it("prioritizes hasCut over job presence", () => {
+    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as ProjectJob;
+    expect(deriveCurrentStep(null, mockJob, false, true, false, false)).toBe(3);
   });
 
   it("prioritizes hasCaptions over hasCut", () => {
-    const file = new File([""], "test.mp4");
-    expect(deriveCurrentStep(file, null, false, true, true, false)).toBe(4);
+    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as ProjectJob;
+    expect(deriveCurrentStep(null, mockJob, false, true, true, false)).toBe(4);
   });
 
   it("returns correct step when job exists", () => {
@@ -65,10 +66,10 @@ describe("buildSidebarSteps", () => {
     expect(steps[4].status).toBe("locked");
   });
 
-  it("marks step 1 done when file is present", () => {
+  it("keeps step 1 active when only file is selected (upload not started)", () => {
     const file = new File([""], "video.mp4");
     const steps = buildSidebarSteps(file, null, false, false, false, null, false, false, false, false);
-    expect(steps[0].status).toBe("done");
+    expect(steps[0].status).toBe("active");
   });
 
   it("marks step 1 done and step 2 processing when uploading", () => {
@@ -84,15 +85,15 @@ describe("buildSidebarSteps", () => {
     expect(steps[0].sub).toContain("Enviando");
   });
 
-  it("marks step 2 done when cut is complete", () => {
-    const file = new File([""], "video.mp4");
-    const steps = buildSidebarSteps(file, null, false, true, false, null, false, false, false, false);
+  it("marks step 2 done when cut is complete (job exists)", () => {
+    const mockJob = { id: "j", projectId: "p", type: "ai_cut", status: "passed", createdAt: new Date(), updatedAt: new Date() } as ProjectJob;
+    const steps = buildSidebarSteps(null, mockJob, false, true, false, null, false, false, false, false);
     expect(steps[1].status).toBe("done");
   });
 
-  it("marks step 2 processing when cut is running", () => {
+  it("marks step 2 processing when cut is running (isUploading)", () => {
     const file = new File([""], "video.mp4");
-    const steps = buildSidebarSteps(file, null, false, false, true, null, false, false, false, false);
+    const steps = buildSidebarSteps(file, null, true, false, false, null, false, false, false, false);
     expect(steps[1].status).toBe("processing");
   });
 
