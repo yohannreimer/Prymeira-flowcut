@@ -1,4 +1,4 @@
-import { Film, Play } from "lucide-react";
+import { Check, Film } from "lucide-react";
 import type { EditPlanSummary, ProjectJob } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
 import { SkeletonLoader } from "../components/SkeletonLoader";
@@ -7,6 +7,7 @@ type AiCutProps = {
   job: ProjectJob | null;
   editPlan: EditPlanSummary | null;
   isUploading: boolean;
+  onNext: () => void;
 };
 
 function formatDuration(sec: number): string {
@@ -15,12 +16,11 @@ function formatDuration(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function AiCut({ job, editPlan, isUploading }: AiCutProps) {
+export function AiCut({ job, editPlan, isUploading, onNext }: AiCutProps) {
   const isRunning = isUploading || (job !== null && ["queued", "running"].includes(job.status));
   const hasCut = Boolean(job?.outputUrl);
   const isFailed = job?.status === "failed";
 
-  const sourceDuration = editPlan?.source.durationSec ?? 0;
   const segments = editPlan?.segments ?? [];
   const removedIntervals = editPlan?.removed ?? [];
   const renderedSec = segments.reduce((sum, seg) => sum + (seg.timelineEndSec - seg.timelineStartSec), 0);
@@ -71,79 +71,96 @@ export function AiCut({ job, editPlan, isUploading }: AiCutProps) {
         </div>
       )}
 
-      {/* Done state: video card + segments */}
+      {/* Done state: video + segments */}
       {hasCut && editPlan && !isRunning && (
         <div>
-          {/* Result card */}
+          {/* Video player */}
           <div style={{
-            background: "var(--shell-surface)", border: "1px solid #222",
-            borderRadius: 12, overflow: "hidden", marginBottom: 12
+            background: "#000", borderRadius: 10, overflow: "hidden",
+            border: "1px solid #222", marginBottom: 12
           }}>
-            {/* Thumbnail placeholder */}
-            <div style={{
-              width: "100%", height: 130,
-              background: "#0f0f0e",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 10
-            }}>
-              <Film size={20} color="#333" />
+            {job?.outputUrl ? (
+              <video
+                src={job.outputUrl}
+                controls
+                style={{ width: "100%", display: "block", maxHeight: 320 }}
+              />
+            ) : (
               <div style={{
-                width: 34, height: 34, borderRadius: "50%",
-                background: "rgba(252,192,9,0.9)",
-                display: "flex", alignItems: "center", justifyContent: "center"
+                height: 160, display: "flex", alignItems: "center", justifyContent: "center"
               }}>
-                <Play size={14} color="#111" />
+                <Film size={20} color="#333" />
               </div>
-            </div>
-            {/* Meta row */}
-            <div style={{ padding: "12px 14px", display: "flex", gap: 20 }}>
-              {[
-                { label: "Duração", value: formatDuration(renderedSec) },
-                { label: "Segmentos", value: String(segments.length) },
-                { label: "Removido", value: formatDuration(removedSec) }
-              ].map(({ label, value }) => (
-                <div key={label} style={{ fontSize: 11 }}>
-                  <div style={{ color: "#3a3a38", textTransform: "uppercase", letterSpacing: "0.5px", fontSize: 9, marginBottom: 2 }}>{label}</div>
-                  <div style={{ color: "#888", fontWeight: 700 }}>{value}</div>
-                </div>
-              ))}
-            </div>
+            )}
+          </div>
+
+          {/* Meta row */}
+          <div style={{
+            display: "flex", gap: 20,
+            padding: "10px 14px", marginBottom: 12,
+            background: "var(--shell-surface)", borderRadius: 8, border: "1px solid #1e1e1c"
+          }}>
+            {[
+              { label: "Duração", value: formatDuration(renderedSec) },
+              { label: "Segmentos", value: String(segments.length) },
+              { label: "Removido", value: formatDuration(removedSec) }
+            ].map(({ label, value }) => (
+              <div key={label} style={{ fontSize: 11 }}>
+                <div style={{ color: "#3a3a38", textTransform: "uppercase", letterSpacing: "0.5px", fontSize: 9, marginBottom: 2 }}>{label}</div>
+                <div style={{ color: "#888", fontWeight: 700 }}>{value}</div>
+              </div>
+            ))}
           </div>
 
           {/* Segment list (first 5) */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            {segments.slice(0, 5).map((seg, i) => {
-              return (
-                <div key={i} style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  padding: "5px 8px", borderRadius: 5,
-                  background: "var(--shell-surface)"
-                }}>
-                  <div style={{
-                    width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                    background: "var(--shell-green)"
-                  }} />
-                  <div style={{
-                    fontSize: 9, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap",
-                    color: "#555"
-                  }}>
-                    {formatDuration(seg.timelineStartSec)}–{formatDuration(seg.timelineEndSec)}
-                  </div>
-                  <div style={{ flex: 1, height: 3, background: "#1e1e1c", borderRadius: 2, overflow: "hidden" }}>
-                    <div style={{
-                      height: "100%", borderRadius: 2,
-                      background: "var(--shell-green)",
-                      opacity: 0.5,
-                      width: `${Math.min(100, ((seg.timelineEndSec - seg.timelineStartSec) / (renderedSec || 1)) * 100)}%`
-                    }} />
-                  </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 16 }}>
+            {segments.slice(0, 5).map((seg, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "5px 8px", borderRadius: 5,
+                background: "var(--shell-surface)"
+              }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: "var(--shell-green)" }} />
+                <div style={{ fontSize: 9, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: "#555" }}>
+                  {formatDuration(seg.timelineStartSec)}–{formatDuration(seg.timelineEndSec)}
                 </div>
-              );
-            })}
+                <div style={{ flex: 1, height: 3, background: "#1e1e1c", borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{
+                    height: "100%", borderRadius: 2, background: "var(--shell-green)", opacity: 0.5,
+                    width: `${Math.min(100, ((seg.timelineEndSec - seg.timelineStartSec) / (renderedSec || 1)) * 100)}%`
+                  }} />
+                </div>
+              </div>
+            ))}
             {segments.length > 5 && (
               <div style={{ fontSize: 10, color: "#3a3a38", paddingLeft: 8, marginTop: 2 }}>
                 + {segments.length - 5} segmentos
               </div>
             )}
+          </div>
+
+          {/* Next step CTA */}
+          <div style={{
+            padding: "12px 16px", borderRadius: 8,
+            background: "rgba(76,175,125,0.07)", border: "1px solid rgba(76,175,125,0.2)",
+            display: "flex", alignItems: "center", justifyContent: "space-between"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#4caf7d", fontWeight: 600 }}>
+              <Check size={13} color="#4caf7d" />
+              Corte gerado · pronto para transcrição
+            </div>
+            <button
+              type="button"
+              onClick={onNext}
+              style={{
+                padding: "7px 14px", borderRadius: 6,
+                background: "var(--shell-gold)", border: "none",
+                fontSize: 11, fontWeight: 800, color: "#111",
+                cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.5px"
+              }}
+            >
+              Ir para transcrição →
+            </button>
           </div>
         </div>
       )}

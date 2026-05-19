@@ -179,23 +179,23 @@ export function GuidedShell({
     hasPackage, isPackageRunning
   );
 
-  // Footer CTA: triggers actions OR navigates to next step when current step is done
+  // Footer CTA: triggers actions on steps 1 and 5; steps 2–4 use in-content CTAs
   const footerConfig: Record<number, { label: string; disabled: boolean; action: () => void }> = {
     1: { label: "Enviar vídeo", disabled: !file || isUploading, action: onStartUpload },
     2: {
-      label: (isCutRunning || isUploading) ? "Processando…" : hasCut ? "Ir para transcrição →" : "Aguardando corte",
-      disabled: isCutRunning || isUploading || !hasCut,
-      action: () => setViewStep(3)
+      label: (isCutRunning || isUploading) ? "Processando…" : hasCut ? "Corte pronto" : "Aguardando corte",
+      disabled: true,
+      action: () => {}
     },
     3: {
-      label: isCaptionJobRunning ? "Transcrevendo…" : hasCaptions ? "Ir para pacote YT →" : "Gerar transcrição →",
-      disabled: isCaptionJobRunning || !hasCut,
-      action: hasCaptions ? () => setViewStep(4) : onGenerateCaptions
+      label: isCaptionJobRunning ? "Transcrevendo…" : hasCaptions ? "Transcrição pronta" : "Gerar transcrição →",
+      disabled: isCaptionJobRunning || hasCaptions || !hasCut,
+      action: onGenerateCaptions
     },
     4: {
-      label: isPackageRunning ? "Gerando…" : hasPackage ? "Ir para publicar →" : "Gerar pacote YT →",
-      disabled: isPackageRunning || !hasCaptions,
-      action: hasPackage ? () => setViewStep(5) : onGenerateYoutubePackage
+      label: isPackageRunning ? "Gerando…" : hasPackage ? "Pacote pronto" : "Gerar pacote YT →",
+      disabled: isPackageRunning || hasPackage || !hasCaptions,
+      action: onGenerateYoutubePackage
     },
     5: { label: "Gerar export final →", disabled: isExporting || !hasPackage, action: onStartFinalExport }
   };
@@ -250,7 +250,7 @@ export function GuidedShell({
         />
       )}
       {currentStep === 2 && (
-        <AiCut job={job} editPlan={editPlan} isUploading={isUploading} />
+        <AiCut job={job} editPlan={editPlan} isUploading={isUploading} onNext={() => setViewStep(3)} />
       )}
       {currentStep === 3 && (
         <Transcription
@@ -259,6 +259,7 @@ export function GuidedShell({
           isCaptioning={isCaptioning}
           videoOrientation={videoOrientation}
           onGenerateCaptions={onGenerateCaptions}
+          onNext={() => setViewStep(4)}
         />
       )}
       {currentStep === 4 && (
@@ -273,6 +274,7 @@ export function GuidedShell({
           publicationDescription={publicationDescription}
           onPublicationTitleChange={onPublicationTitleChange}
           onPublicationDescriptionChange={onPublicationDescriptionChange}
+          onNext={() => setViewStep(5)}
         />
       )}
       {currentStep === 5 && (

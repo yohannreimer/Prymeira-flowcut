@@ -1,4 +1,4 @@
-import { AlignLeft, Image, List, Type } from "lucide-react";
+import { AlignLeft, Check, Image, List, Type } from "lucide-react";
 import type { ProjectJob, YoutubePackageSummary } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
 import { SkeletonLoader } from "../components/SkeletonLoader";
@@ -16,6 +16,7 @@ type YouTubePackageProps = {
   publicationDescription: string;
   onPublicationTitleChange: (title: string) => void;
   onPublicationDescriptionChange: (desc: string) => void;
+  onNext: () => void;
 };
 
 export function YouTubePackage({
@@ -29,6 +30,7 @@ export function YouTubePackage({
   publicationDescription,
   onPublicationTitleChange,
   onPublicationDescriptionChange,
+  onNext,
 }: YouTubePackageProps) {
   const isRunning =
     isGeneratingYoutubePackage ||
@@ -265,6 +267,33 @@ export function YouTubePackage({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Next step CTA */}
+      {hasPackage && !isRunning && (
+        <div style={{
+          marginTop: 16,
+          padding: "12px 16px", borderRadius: 8,
+          background: "rgba(76,175,125,0.07)", border: "1px solid rgba(76,175,125,0.2)",
+          display: "flex", alignItems: "center", justifyContent: "space-between"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#4caf7d", fontWeight: 600 }}>
+            <Check size={13} color="#4caf7d" />
+            Pacote pronto · pronto para publicar
+          </div>
+          <button
+            type="button"
+            onClick={onNext}
+            style={{
+              padding: "7px 14px", borderRadius: 6,
+              background: "var(--shell-gold)", border: "none",
+              fontSize: 11, fontWeight: 800, color: "#111",
+              cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.5px"
+            }}
+          >
+            Ir para publicar →
+          </button>
         </div>
       )}
     </div>

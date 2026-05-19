@@ -1,4 +1,4 @@
-import { Monitor, Smartphone } from "lucide-react";
+import { Check, Monitor, Smartphone } from "lucide-react";
 import type { EditPlanSummary, ProjectJob } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
 import { SkeletonLoader } from "../components/SkeletonLoader";
@@ -9,6 +9,7 @@ type TranscriptionProps = {
   isCaptioning: boolean;
   videoOrientation: "horizontal" | "vertical";
   onGenerateCaptions: () => void;
+  onNext: () => void;
 };
 
 function formatTimestamp(sec: number): string {
@@ -23,7 +24,8 @@ export function Transcription({
   captionJob,
   isCaptioning,
   videoOrientation,
-  onGenerateCaptions
+  onGenerateCaptions,
+  onNext
 }: TranscriptionProps) {
   const isRunning = isCaptioning || (captionJob !== null && ["queued", "running"].includes(captionJob.status));
   const hasCaptions = Boolean(editPlan?.captions.length);
@@ -147,6 +149,33 @@ export function Transcription({
         >
           Gerar transcrição
         </button>
+      )}
+
+      {/* Next step CTA */}
+      {hasCaptions && !isRunning && (
+        <div style={{
+          marginTop: 16,
+          padding: "12px 16px", borderRadius: 8,
+          background: "rgba(76,175,125,0.07)", border: "1px solid rgba(76,175,125,0.2)",
+          display: "flex", alignItems: "center", justifyContent: "space-between"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#4caf7d", fontWeight: 600 }}>
+            <Check size={13} color="#4caf7d" />
+            Transcrição gerada · pronto para pacote YT
+          </div>
+          <button
+            type="button"
+            onClick={onNext}
+            style={{
+              padding: "7px 14px", borderRadius: 6,
+              background: "var(--shell-gold)", border: "none",
+              fontSize: 11, fontWeight: 800, color: "#111",
+              cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.5px"
+            }}
+          >
+            Ir para pacote YT →
+          </button>
+        </div>
       )}
     </div>
   );
