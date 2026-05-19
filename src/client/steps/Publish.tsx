@@ -7,9 +7,12 @@ type PublishProps = {
   editPlan: EditPlanSummary | null;
   exportJob: ProjectJob | null;
   isExporting: boolean;
+  isPublishingYoutube: boolean;
+  youtubePublicationUrl: string | null;
   publicationVisibility: "private" | "unlisted" | "public";
   onPublicationVisibilityChange: (v: "private" | "unlisted" | "public") => void;
   onStartFinalExport: () => void;
+  onPublishYoutube: () => void;
 };
 
 const VISIBILITY_LABELS: Record<string, string> = {
@@ -29,9 +32,12 @@ export function Publish({
   editPlan,
   exportJob,
   isExporting,
+  isPublishingYoutube,
+  youtubePublicationUrl,
   publicationVisibility,
   onPublicationVisibilityChange,
-  onStartFinalExport
+  onStartFinalExport,
+  onPublishYoutube
 }: PublishProps) {
   const hasPackage = youtubePackageSummary?.status === "ready";
   const hasCaptions = Boolean(editPlan?.captions.length);
@@ -128,27 +134,35 @@ export function Publish({
       {/* Export + publish CTA */}
       <button
         type="button"
-        onClick={onStartFinalExport}
-        disabled={isExporting || !hasPackage}
+        onClick={hasExport ? onPublishYoutube : onStartFinalExport}
+        disabled={isExporting || isPublishingYoutube || !hasPackage}
         style={{
           width: "100%", padding: "11px",
-          background: isExporting || !hasPackage ? "var(--shell-border)" : "var(--shell-gold)",
+          background: isExporting || isPublishingYoutube || !hasPackage ? "var(--shell-border)" : "var(--shell-gold)",
           border: "none", borderRadius: 8,
           fontSize: 12, fontWeight: 800,
-          color: isExporting || !hasPackage ? "#333" : "#111",
+          color: isExporting || isPublishingYoutube || !hasPackage ? "#333" : "#111",
           textTransform: "uppercase", letterSpacing: "0.5px",
-          cursor: isExporting || !hasPackage ? "not-allowed" : "pointer",
+          cursor: isExporting || isPublishingYoutube || !hasPackage ? "not-allowed" : "pointer",
           display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
           marginBottom: 8
         }}
       >
         <Upload size={13} />
-        {isExporting ? "Gerando export…" : hasExport ? "Gerar novo export" : "Gerar export final"}
+        {isPublishingYoutube
+          ? "Publicando…"
+          : isExporting
+            ? "Gerando export…"
+            : hasExport
+              ? "Publicar no YouTube"
+              : "Gerar export final"}
       </button>
 
       <div style={{ fontSize: 10, color: "#3a3a38", textAlign: "center", lineHeight: 1.5 }}>
-        {hasExport
-          ? "Export pronto. Publicação direta no YouTube disponível em breve."
+        {youtubePublicationUrl
+          ? <a href={youtubePublicationUrl} target="_blank" rel="noreferrer" style={{ color: "var(--shell-gold)" }}>Publicado no YouTube</a>
+          : hasExport
+            ? "Export pronto. Clique para enviar direto ao YouTube."
           : "Revise thumbnail, título e descrição antes de gerar o export."}
       </div>
     </div>

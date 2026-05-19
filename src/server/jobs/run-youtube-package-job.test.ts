@@ -121,6 +121,7 @@ describe("runYoutubePackageJob", () => {
       await expect(readFile(path.join(packageDir, "titulo.txt"), "utf8")).resolves.toContain("Economiza Horas");
       await expect(readFile(path.join(packageDir, "descricao.txt"), "utf8")).resolves.toContain("descricao pronta");
       await expect(readFile(path.join(packageDir, "chapters.txt"), "utf8")).resolves.toContain("00:30 Como transformar o dia ruim");
+      await expect(readFile(path.join(packageDir, "tags.txt"), "utf8")).resolves.toBe("PROCESSO\nREAL\nBASTIDOR\n");
       const thumbnailPrompt = await readFile(path.join(packageDir, "prompt-thumbnail.txt"), "utf8");
       expect(thumbnailPrompt).toContain("VARIACAO 1");
       expect(thumbnailPrompt).toContain("VARIACAO 2");

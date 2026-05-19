@@ -104,6 +104,8 @@ export type GuidedShellProps = {
   youtubePackageSummary: YoutubePackageSummary | null;
   selectedGeneratedThumbnailName: string | null;
   isExporting: boolean;
+  isPublishingYoutube: boolean;
+  youtubePublicationUrl: string | null;
   exportJob: ProjectJob | null;
   isUploading: boolean;
   isCaptioning: boolean;
@@ -126,11 +128,12 @@ export type GuidedShellProps = {
   onPublicationDescriptionChange: (desc: string) => void;
   onPublicationVisibilityChange: (v: "private" | "unlisted" | "public") => void;
   onStartFinalExport: () => void;
+  onPublishYoutube: () => void;
 };
 
 export function GuidedShell({
   file, job, editPlan, youtubePackageSummary,
-  selectedGeneratedThumbnailName, isExporting, exportJob,
+  selectedGeneratedThumbnailName, isExporting, isPublishingYoutube, youtubePublicationUrl, exportJob,
   isUploading, isCaptioning, captionJob,
   isGeneratingYoutubePackage, youtubePackageJob,
   uploadConfig, isFileTooLarge, error, projects,
@@ -138,7 +141,7 @@ export function GuidedShell({
   onFileSelected, onStartUpload, onGenerateCaptions,
   onGenerateYoutubePackage, onSelectGeneratedThumbnail,
   onPublicationTitleChange, onPublicationDescriptionChange,
-  onPublicationVisibilityChange, onStartFinalExport
+  onPublicationVisibilityChange, onStartFinalExport, onPublishYoutube
 }: GuidedShellProps) {
   const hasCut = Boolean(job?.outputUrl);
   const hasCaptions = Boolean(editPlan?.captions.length);
@@ -146,6 +149,7 @@ export function GuidedShell({
   const isCutRunning = isActiveJob(job);
   const isCaptionJobRunning = isActiveJob(captionJob);
   const isPackageRunning = isActiveJob(youtubePackageJob);
+  const hasExport = Boolean(exportJob?.outputUrl);
   const videoOrientation: "horizontal" | "vertical" =
     editPlan && editPlan.source.width >= editPlan.source.height ? "horizontal" : "vertical";
 
@@ -197,7 +201,11 @@ export function GuidedShell({
       disabled: isPackageRunning || hasPackage || !hasCaptions,
       action: onGenerateYoutubePackage
     },
-    5: { label: "Gerar export final →", disabled: isExporting || !hasPackage, action: onStartFinalExport }
+    5: {
+      label: isPublishingYoutube ? "Publicando…" : hasExport ? "Publicar no YouTube →" : "Gerar export final →",
+      disabled: isExporting || isPublishingYoutube || !hasPackage,
+      action: hasExport ? onPublishYoutube : onStartFinalExport
+    }
   };
   const footer = footerConfig[currentStep];
 
@@ -283,9 +291,12 @@ export function GuidedShell({
           editPlan={editPlan}
           exportJob={exportJob}
           isExporting={isExporting}
+          isPublishingYoutube={isPublishingYoutube}
+          youtubePublicationUrl={youtubePublicationUrl}
           publicationVisibility={publicationVisibility}
           onPublicationVisibilityChange={onPublicationVisibilityChange}
           onStartFinalExport={onStartFinalExport}
+          onPublishYoutube={onPublishYoutube}
         />
       )}
     </AppShell>

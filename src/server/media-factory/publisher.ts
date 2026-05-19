@@ -5,6 +5,7 @@ import { createMediaFactoryFolders } from "./files";
 import { mediaFactoryManifestSchema, updateManifest, writeManifest, type MediaFactoryManifest } from "./manifest";
 import { silentProgressReporter, type ProgressReporter } from "./progress";
 import {
+  getYouTubeCredentialsFromEnv,
   publishYouTubeVideo as defaultPublishYouTubeVideo,
   type YouTubeOAuthCredentials,
   type YouTubePublishResult
@@ -15,6 +16,8 @@ import {
   type XPublishCredentials,
   type XThreadPublishResult
 } from "./x-publisher";
+
+export { getYouTubeCredentialsFromEnv };
 
 export type DryRunPublishItem = {
   platform: string;
@@ -453,18 +456,6 @@ async function publishPackage({
     status,
     items
   };
-}
-
-export function getYouTubeCredentialsFromEnv(env: NodeJS.ProcessEnv = process.env): YouTubeOAuthCredentials | null {
-  const clientId = env.YOUTUBE_CLIENT_ID?.trim();
-  const clientSecret = env.YOUTUBE_CLIENT_SECRET?.trim();
-  const refreshToken = env.YOUTUBE_REFRESH_TOKEN?.trim();
-
-  if (!clientId || !clientSecret || !refreshToken) {
-    return null;
-  }
-
-  return { clientId, clientSecret, refreshToken };
 }
 
 async function readManifest(manifestPath: string): Promise<MediaFactoryManifest> {

@@ -1,0 +1,11 @@
+node_modules
+dist
+workspace
+identity-photos
+.git
+.github
+.DS_Store
+.env
+.env.local
+fixtures/*.mp4
+coverage

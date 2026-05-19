@@ -1,10 +1,10 @@
-# Prymeira Media Multitenancy Design
+# Prymeira Flowcut Multitenancy Design
 
 Date: 2026-05-19
 
 ## Goal
 
-Bring the current MediaFactory/Flowcut app into the Prymeira Account ecosystem as the `media` product.
+Bring the current Flowcut app into the Prymeira Account ecosystem as the `media` product.
 
 The app should:
 
@@ -22,7 +22,7 @@ Use the existing Prymeira Account product key:
 media
 ```
 
-This product already exists in `../Prymeira Account/apps/account-api/prisma/seed.ts` and is already represented in the Hub as "Media AI". Interface labels can be renamed later without changing the authorization contract.
+This product is represented internally by the `media` product key in Prymeira Account. The public app name is Flowcut.
 
 ## Architecture
 
@@ -33,7 +33,7 @@ Prymeira Account remains the source of truth for customer, workspace, product en
 The current app should not duplicate entitlement logic. It should depend on the local package:
 
 ```json
-"@prymeira/auth": "file:../Prymeira Account/packages/auth"
+"@prymeira/auth": "file:packages/auth"
 ```
 
 Server routes use `requireProductAccess("media", ...)` or an app wrapper around it. The returned access decision becomes the tenant context:
@@ -54,10 +54,10 @@ For local development, use:
 VITE_PRODUCT_MEDIA_URL=http://localhost:5173
 ```
 
-In production, the Account seed already points `media` to:
+In production, the Hub product URL should point `media` to:
 
 ```text
-https://media.prymeiradigital.com.br
+https://flowcut.prymeiradigital.com.br
 ```
 
 ### Media App Frontend
@@ -210,4 +210,4 @@ A production migration can be added later once there is real tenant data to pres
 
 The approved product key is `media`.
 
-Visual naming remains flexible. The Hub can continue showing "Media AI" for now, and the app interface can be renamed later without changing authorization or tenancy behavior.
+The public app name is Flowcut. The internal authorization product key remains `media`.

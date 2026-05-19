@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 
 export type YouTubeOAuthCredentials = {
   clientId: string;
@@ -12,6 +13,18 @@ export type YouTubePublishResult = {
 };
 
 type FetchLike = typeof fetch;
+
+export function getYouTubeCredentialsFromEnv(env: NodeJS.ProcessEnv = process.env): YouTubeOAuthCredentials | null {
+  const clientId = env.YOUTUBE_CLIENT_ID?.trim();
+  const clientSecret = env.YOUTUBE_CLIENT_SECRET?.trim();
+  const refreshToken = env.YOUTUBE_REFRESH_TOKEN?.trim();
+
+  if (!clientId || !clientSecret || !refreshToken) {
+    return null;
+  }
+
+  return { clientId, clientSecret, refreshToken };
+}
 
 export async function refreshYouTubeAccessToken({
   credentials,
@@ -145,13 +158,25 @@ async function setYouTubeThumbnail({
       method: "POST",
       headers: {
         authorization: `Bearer ${accessToken}`,
-        "content-type": "image/png",
+        "content-type": getImageContentType(thumbnailPath),
         "content-length": String(thumbnailBytes.byteLength)
       },
       body: new Blob([thumbnailBytes])
     }
   );
   await assertOk(response, "YouTube thumbnail upload");
+}
+
+function getImageContentType(filePath: string) {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".webp":
+      return "image/webp";
+    default:
+      return "image/png";
+  }
 }
 
 async function assertOk(response: Response, label: string): Promise<void> {

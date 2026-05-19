@@ -1,14 +1,16 @@
 {
-  "name": "ai-first-youtube-editor",
+  "name": "prymeira-flowcut",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"vite --host 0.0.0.0 --port 5173\" \"tsx watch src/server/index.ts\"",
-    "build": "tsc --noEmit && vite build && npm run build:server",
-    "build:server": "esbuild src/server/index.ts --bundle --platform=node --format=esm --outfile=dist/server/index.js --packages=external",
+    "build": "npm run build:auth && tsc --noEmit && vite build && npm run build:server:bundle",
+    "build:auth": "npm --prefix packages/auth run build",
+    "build:server": "npm run build:auth && npm run build:server:bundle",
+    "build:server:bundle": "esbuild src/server/index.ts --bundle --platform=node --format=esm --outfile=dist/server/index.js --packages=external",
     "start": "node dist/server/index.js",
-    "test": "vitest run",
+    "test": "npm run build:auth && vitest run",
     "test:watch": "vitest",
     "check": "tsc --noEmit && vitest run",
     "media-factory": "tsx src/server/media-factory/cli.ts"
@@ -16,7 +18,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1045.0",
     "@clerk/clerk-react": "^5.49.0",
-    "@prymeira/auth": "file:../Prymeira Account/packages/auth",
+    "@prymeira/auth": "file:packages/auth",
     "@remotion/bundler": "^4.0.457",
     "@remotion/google-fonts": "^4.0.462",
     "@remotion/renderer": "^4.0.457",

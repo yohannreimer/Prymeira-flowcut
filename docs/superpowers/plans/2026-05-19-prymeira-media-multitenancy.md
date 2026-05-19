@@ -1,4 +1,4 @@
-# Prymeira Media Multitenancy Implementation Plan
+# Prymeira Flowcut Multitenancy Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -40,7 +40,7 @@
 Run:
 
 ```bash
-npm install @clerk/clerk-react@^5.49.0 "@prymeira/auth@file:../Prymeira Account/packages/auth"
+npm install @clerk/clerk-react@^5.49.0 "@prymeira/auth@file:packages/auth"
 ```
 
 Expected: `package.json` includes `@clerk/clerk-react` and `@prymeira/auth`; `package-lock.json` is updated.
@@ -1318,7 +1318,7 @@ git commit -m "feat: require clerk sign in for media app"
 Create `docs/prymeira-media-local-dev.md`:
 
 ````md
-# Prymeira Media Local Development
+# Prymeira Flowcut Local Development
 
 Run Prymeira Account first:
 

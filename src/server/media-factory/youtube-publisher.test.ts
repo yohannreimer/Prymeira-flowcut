@@ -133,4 +133,40 @@ describe("publishYouTubeVideo", () => {
       });
     });
   });
+
+  it("sends the thumbnail content type from the selected file extension", async () => {
+    await withTempDir("media-factory-youtube-thumbnail-type-", async (dir) => {
+      const videoPath = path.join(dir, "youtube.mp4");
+      const thumbnailPath = path.join(dir, "thumbnail.jpg");
+      await fs.writeFile(videoPath, "video-bytes");
+      await fs.writeFile(thumbnailPath, "thumbnail-bytes");
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "access-123" }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, {
+          status: 200,
+          headers: { location: "https://upload.youtube.test/session" }
+        }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ id: "video-123" }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ kind: "youtube#thumbnailSetResponse" }), { status: 200 }));
+
+      await publishYouTubeVideo({
+        videoPath,
+        thumbnailPath,
+        title: "Titulo forte",
+        description: "Descricao",
+        hashtags: [],
+        credentials: {
+          clientId: "client-id",
+          clientSecret: "client-secret",
+          refreshToken: "refresh-token"
+        },
+        fetch
+      });
+
+      expect(fetch.mock.calls[3][1].headers).toMatchObject({
+        "content-type": "image/jpeg"
+      });
+    });
+  });
 });

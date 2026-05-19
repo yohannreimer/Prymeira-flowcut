@@ -1,0 +1,75 @@
+version: "3.7"
+
+services:
+  flowcut_backend:
+    image: ghcr.io/${GHCR_OWNER:-yohannreimer}/prymeira-flowcut-backend:${IMAGE_TAG:-latest}
+    environment:
+      NODE_ENV: production
+      PORT: "4317"
+      AI_EDITOR_WORKSPACE: /app/workspace
+      PRYMEIRA_ACCOUNT_API_URL: https://hub.prymeiradigital.com.br/api
+      PRYMEIRA_PRODUCT_KEY: media
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_TRANSCRIPTION_MODEL: ${OPENAI_TRANSCRIPTION_MODEL:-whisper-1}
+      OPENAI_TRANSCRIPTION_LANGUAGE: ${OPENAI_TRANSCRIPTION_LANGUAGE:-pt}
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
+      YOUTUBE_REFRESH_TOKEN: ${YOUTUBE_REFRESH_TOKEN:-}
+    networks:
+      flowcut_internal:
+        aliases:
+          - backend
+    volumes:
+      - flowcut_workspace:/app/workspace
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+          - node.hostname == manager01
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1024M
+      restart_policy:
+        condition: on-failure
+
+  flowcut_frontend:
+    image: ghcr.io/${GHCR_OWNER:-yohannreimer}/prymeira-flowcut-frontend:${IMAGE_TAG:-latest}
+    environment:
+      VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
+    networks:
+      - network_swarm_public
+      - flowcut_internal
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+          - node.hostname == manager01
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=network_swarm_public
+        - traefik.http.routers.flowcut.rule=Host(`flowcut.prymeiradigital.com.br`)
+        - traefik.http.routers.flowcut.entrypoints=websecure
+        - traefik.http.routers.flowcut.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.flowcut.service=flowcut
+        - traefik.http.services.flowcut.loadbalancer.server.port=80
+
+volumes:
+  flowcut_workspace:
+
+networks:
+  network_swarm_public:
+    external: true
+  flowcut_internal:
+    driver: overlay

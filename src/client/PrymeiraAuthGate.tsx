@@ -31,9 +31,9 @@ export function PrymeiraAuthGate({
     return (
       <main className="auth-gate">
         <section className="auth-gate__panel" aria-labelledby="auth-gate-title">
-          <span className="auth-gate__eyebrow">Prymeira Media</span>
+          <span className="auth-gate__eyebrow">Prymeira Flowcut</span>
           <h1 id="auth-gate-title">Configuração Clerk ausente.</h1>
-          <p>Defina VITE_CLERK_PUBLISHABLE_KEY para entrar no produto Media.</p>
+          <p>Defina VITE_CLERK_PUBLISHABLE_KEY para entrar no Flowcut.</p>
         </section>
       </main>
     );

@@ -1,6 +1,6 @@
-# Prymeira Media Local Development
+# Prymeira Flowcut Local Development
 
-Use this when running Media through the local Prymeira Account and Hub stack.
+Use this when running Flowcut through the local Prymeira Account and Hub stack.
 
 ## 1. Run Prymeira Account
 
@@ -13,7 +13,7 @@ pnpm prisma:seed
 pnpm dev
 ```
 
-The Account API must allow the Media app origin in CORS:
+The Account API must allow the Flowcut app origin in CORS:
 
 ```text
 http://localhost:5173
@@ -26,7 +26,7 @@ cd "../Prymeira Account"
 VITE_PRODUCT_MEDIA_URL=http://localhost:5173 pnpm dev:hub
 ```
 
-## 3. Run Media
+## 3. Run Flowcut
 
 ```bash
 npm install

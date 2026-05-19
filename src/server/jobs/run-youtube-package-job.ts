@@ -150,6 +150,7 @@ async function writeCopyFiles(packageDir: string, copy: YoutubePackageCopy) {
     writeFile(path.join(packageDir, "titulo.txt"), `${copy.title.trim()}\n`),
     writeFile(path.join(packageDir, "descricao.txt"), `${copy.description.trim()}\n`),
     writeFile(path.join(packageDir, "chapters.txt"), formatChapters(copy.chapters)),
+    writeFile(path.join(packageDir, "tags.txt"), formatYouTubeTags(copy)),
     writeFile(path.join(packageDir, "prompt-thumbnail.txt"), formatThumbnailPrompts(copy.thumbnailPrompts)),
     ...promptFiles
   ]);
@@ -157,6 +158,15 @@ async function writeCopyFiles(packageDir: string, copy: YoutubePackageCopy) {
 
 function formatChapters(chapters: YoutubePackageCopy["chapters"]) {
   return `${chapters.map((chapter) => `${chapter.time.trim()} ${chapter.title.trim()}`).join("\n")}\n`;
+}
+
+function formatYouTubeTags(copy: YoutubePackageCopy) {
+  const tags = Array.from(new Set(
+    copy.thumbnailPrompts.flatMap((idea) =>
+      idea.renderText.tags.map((tag) => tag.trim()).filter(Boolean)
+    )
+  ));
+  return `${tags.join("\n")}\n`;
 }
 
 const THUMBNAIL_IDEA_SLUGS = [
