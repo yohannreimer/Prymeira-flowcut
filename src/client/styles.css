@@ -2267,3 +2267,45 @@ textarea:focus-visible {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
+
+.auth-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: #111110;
+  color: #f6f2e8;
+}
+
+.auth-gate__panel {
+  width: min(100%, 420px);
+  border: 1px solid rgba(246, 242, 232, 0.16);
+  border-radius: 8px;
+  padding: 28px;
+  background: #1a1917;
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.32);
+}
+
+.auth-gate__eyebrow {
+  display: block;
+  margin-bottom: 12px;
+  color: #d8b25e;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.auth-gate h1 {
+  margin: 0 0 10px;
+  color: #fbfaf4;
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.auth-gate p {
+  margin: 0;
+  color: #c9c2b4;
+  font-size: 14px;
+  line-height: 1.5;
+}
