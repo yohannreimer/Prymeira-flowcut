@@ -65,7 +65,7 @@ export function createApp(options: CreateAppOptions = {}) {
       return workspaceRoot;
     }
 
-    const tenant = await requireTenantAccess(req.get("authorization"));
+    const tenant = await requireTenantAccess(resolveMediaAuthorization(req));
     return getTenantProjectRoot(workspaceRoot, tenant.workspaceId);
   }
 
@@ -157,6 +157,42 @@ function setMediaNoCacheHeaders(res: express.Response) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
+}
+
+function resolveMediaAuthorization(req: express.Request): string | undefined {
+  const authorization = req.get("authorization");
+  if (authorization) {
+    return authorization;
+  }
+
+  const sessionCookie = parseCookieValue(req.get("cookie"), "__session");
+  return sessionCookie ? `Bearer ${sessionCookie}` : undefined;
+}
+
+function parseCookieValue(cookieHeader: string | undefined, name: string): string | undefined {
+  if (!cookieHeader) {
+    return undefined;
+  }
+
+  for (const part of cookieHeader.split(";")) {
+    const [rawName, ...rawValueParts] = part.split("=");
+    if (rawName?.trim() !== name) {
+      continue;
+    }
+
+    const rawValue = rawValueParts.join("=").trim();
+    if (!rawValue) {
+      return undefined;
+    }
+
+    try {
+      return decodeURIComponent(rawValue);
+    } catch {
+      return rawValue;
+    }
+  }
+
+  return undefined;
 }
 
 function handleAccessError(error: unknown, res: express.Response, next: express.NextFunction) {

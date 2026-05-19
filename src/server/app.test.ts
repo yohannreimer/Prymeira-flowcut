@@ -70,6 +70,33 @@ describe("createApp", () => {
     });
   });
 
+  it("serves tenant media using the Clerk session cookie", async () => {
+    await withTempDir("ai-editor-app-tenant-media-cookie-", async (dir) => {
+      await mkdir(path.join(dir, "workspaces", "workspace_123", "projects", "project_123", "renders"), { recursive: true });
+      await writeFile(
+        path.join(dir, "workspaces", "workspace_123", "projects", "project_123", "renders", "draft.mp4"),
+        "tenant cookie media"
+      );
+      const requireTenantAccess = vi.fn().mockResolvedValue({
+        token: "clerk-token-cookie",
+        workspaceId: "workspace_123",
+        workspaceRole: "owner",
+        productKey: "media",
+        productRole: "admin",
+        plan: "pro",
+        limits: {}
+      });
+
+      const response = await request(createApp({ workspaceRoot: dir, runJobs: false, requireTenantAccess }))
+        .get("/media/project_123/draft.mp4")
+        .set("Cookie", "__session=clerk-token-cookie")
+        .expect(200);
+
+      expect(Buffer.from(response.body).toString("utf8")).toBe("tenant cookie media");
+      expect(requireTenantAccess).toHaveBeenCalledWith("Bearer clerk-token-cookie");
+    });
+  });
+
   it("does not serve tenant media without a token when auth is configured", async () => {
     await withTempDir("ai-editor-app-tenant-media-missing-token-", async (dir) => {
       const requireTenantAccess = vi.fn().mockRejectedValue({
