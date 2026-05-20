@@ -508,8 +508,8 @@ export function App() {
     setIsLoadingProjects(true);
     try {
       setProjects(await listProjects());
-    } catch {
-      // A biblioteca nao bloqueia a edicao atual.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao carregar projetos do Flowcut");
     } finally {
       setIsLoadingProjects(false);
     }

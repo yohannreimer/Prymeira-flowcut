@@ -36,6 +36,56 @@ describe("createApp", () => {
       .expect({ uploadFileSizeLimitBytes: 1234 });
   });
 
+  it("protects upload configuration when tenant access is enabled", async () => {
+    const requireTenantAccess = vi.fn().mockRejectedValue({
+      statusCode: 403,
+      code: "product_access_denied",
+      message: "Access denied for media: no_entitlement."
+    });
+
+    await request(createApp({
+      workspaceRoot: "unused",
+      runJobs: false,
+      uploadFileSizeLimitBytes: 1234,
+      requireTenantAccess
+    }))
+      .get("/api/config")
+      .expect(403)
+      .expect({
+        error: {
+          code: "product_access_denied",
+          message: "Access denied for media: no_entitlement."
+        }
+      });
+
+    expect(requireTenantAccess).toHaveBeenCalledWith(undefined);
+  });
+
+  it("returns upload configuration when tenant access allows the request", async () => {
+    const requireTenantAccess = vi.fn().mockResolvedValue({
+      token: "clerk-token",
+      workspaceId: "workspace_123",
+      workspaceRole: "owner",
+      productKey: "media",
+      productRole: "admin",
+      plan: "pro",
+      limits: {}
+    });
+
+    await request(createApp({
+      workspaceRoot: "unused",
+      runJobs: false,
+      uploadFileSizeLimitBytes: 1234,
+      requireTenantAccess
+    }))
+      .get("/api/config")
+      .set("Authorization", "Bearer clerk-token")
+      .expect(200)
+      .expect({ uploadFileSizeLimitBytes: 1234 });
+
+    expect(requireTenantAccess).toHaveBeenCalledWith("Bearer clerk-token");
+  });
+
   it("serves rendered media files from the configured workspace root", async () => {
     await withTempDir("ai-editor-app-", async (dir) => {
       await mkdir(path.join(dir, "project_123", "renders"), { recursive: true });

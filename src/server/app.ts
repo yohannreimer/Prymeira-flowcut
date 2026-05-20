@@ -144,8 +144,15 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json({ ok: true });
   });
 
-  app.get("/api/config", (_req, res) => {
-    res.json({ uploadFileSizeLimitBytes });
+  app.get("/api/config", async (req, res, next) => {
+    try {
+      if (requireTenantAccess) {
+        await requireTenantAccess(resolveMediaAuthorization(req));
+      }
+      res.json({ uploadFileSizeLimitBytes });
+    } catch (error) {
+      handleAccessError(error, res, next);
+    }
   });
 
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

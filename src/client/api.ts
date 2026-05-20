@@ -377,6 +377,17 @@ async function readErrorMessage(response: Response) {
   if (contentType.includes("application/json")) {
     const body = await response.json().catch(() => null) as { error?: unknown } | null;
     if (typeof body?.error === "string") return body.error;
+    if (body?.error && typeof body.error === "object") {
+      const error = body.error as { code?: unknown; message?: unknown };
+      if (error.code === "product_access_denied") {
+        return "Seu usuário não tem acesso ao Flowcut neste workspace.";
+      }
+      if (error.code === "missing_auth_token") {
+        return "Faça login novamente para acessar o Flowcut.";
+      }
+      if (typeof error.message === "string") return error.message;
+    }
+    return `Falha na API (${response.status})`;
   }
   return response.text();
 }
