@@ -32,6 +32,7 @@ export type ProjectJob = {
 
 export type UploadConfig = {
   uploadFileSizeLimitBytes: number;
+  directUploadEnabled: boolean;
 };
 
 export type YoutubePackageSummary = {
@@ -87,6 +88,7 @@ type FetchOptions = {
 type UploadVideoOptions = {
   uploadFileSizeLimitBytes?: number;
   cutPresetId?: CutPresetId;
+  directUploadEnabled?: boolean;
 };
 
 type ApiAuthTokenProvider = (() => Promise<string | null> | string | null) | null;
@@ -129,6 +131,9 @@ export async function uploadVideo(
   form.append("video", file);
   if (options.cutPresetId) {
     form.append("cutPreset", options.cutPresetId);
+  }
+  if (options.directUploadEnabled) {
+    return uploadVideoDirect(file, options.cutPresetId);
   }
   return uploadVideoWithXhr(form);
 }
@@ -393,6 +398,64 @@ async function uploadVideoWithXhr(form: FormData): Promise<{ projectId: string; 
     };
 
     xhr.send(form);
+  });
+}
+
+async function uploadVideoDirect(file: File, cutPresetId?: CutPresetId): Promise<{ projectId: string; job: ProjectJob }> {
+  const contentType = getVideoContentType(file);
+  const createResponse = await request("/api/projects/uploads", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      fileName: file.name,
+      contentType,
+      sizeBytes: file.size
+    })
+  });
+  if (!createResponse.ok) throw new Error(await readErrorMessage(createResponse));
+  const created = await createResponse.json() as {
+    upload: { id: string };
+    uploadUrl: string;
+  };
+
+  await putFileToSignedUrl(created.uploadUrl, file, contentType);
+
+  const completeResponse = await request(`/api/projects/uploads/${encodeURIComponent(created.upload.id)}/complete`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cutPreset: cutPresetId })
+  });
+  if (!completeResponse.ok) throw new Error(await readErrorMessage(completeResponse));
+  return completeResponse.json();
+}
+
+function getVideoContentType(file: File): string {
+  if (file.type.startsWith("video/")) return file.type;
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  if (extension === "mov") return "video/quicktime";
+  if (extension === "mkv") return "video/x-matroska";
+  return "video/mp4";
+}
+
+function putFileToSignedUrl(uploadUrl: string, file: File, contentType: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl, true);
+    xhr.setRequestHeader("content-type", contentType);
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+      reject(new Error(xhr.responseText || `Falha ao enviar arquivo para o R2 (${xhr.status}).`));
+    };
+    xhr.onerror = () => {
+      reject(new Error("Upload para o R2 foi interrompido. Verifique a conexao e tente novamente."));
+    };
+    xhr.ontimeout = () => {
+      reject(new Error("Upload para o R2 demorou demais e foi interrompido."));
+    };
+    xhr.send(file);
   });
 }
 

@@ -20,11 +20,12 @@ import {
   createMediaFactorySaasRouter,
   type MediaFactoryObjectStorage
 } from "./routes/media-factory-saas";
-import { createProjectRouter } from "./routes/projects";
+import { createProjectRouter, type ProjectDirectUploadStorage } from "./routes/projects";
 import {
   startProjectRetentionCleanup as defaultStartProjectRetentionCleanup,
   type startProjectRetentionCleanup
 } from "./project-retention";
+import { createR2ProjectDirectUploadStorage } from "./project-direct-upload-storage";
 
 const PROJECT_ID_PATTERN = /^project_[A-Za-z0-9_-]+$/;
 
@@ -51,6 +52,7 @@ export type CreateAppOptions = {
   runProjectRetentionCleanup?: boolean;
   startProjectRetentionCleanup?: typeof startProjectRetentionCleanup;
   requireTenantAccess?: (authorization: string | undefined) => Promise<PrymeiraTenantContext>;
+  directUploadStorage?: ProjectDirectUploadStorage;
   mediaFactorySaas?: MediaFactorySaasOptions;
 };
 
@@ -64,6 +66,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const projectRetentionMinutes = options.projectRetentionMinutes ?? config.projectRetentionMinutes;
   const jobs = options.jobs ?? createJobStore();
   const startProjectRetentionCleanup = options.startProjectRetentionCleanup ?? defaultStartProjectRetentionCleanup;
+  const directUploadStorage = options.directUploadStorage ?? createR2ProjectDirectUploadStorage() ?? undefined;
   const requireTenantAccess = options.requireTenantAccess ?? (config.prymeiraAccountApiUrl
     ? createPrymeiraTenantAccess({
       accountApiUrl: config.prymeiraAccountApiUrl,
@@ -146,7 +149,8 @@ export function createApp(options: CreateAppOptions = {}) {
     runExportJob: options.runExportJob,
     runYoutubePackageJob: options.runYoutubePackageJob,
     uploadFileSizeLimitBytes,
-    requireTenantAccess
+    requireTenantAccess,
+    directUploadStorage
   }));
 
   if (options.mediaFactorySaas?.enabled) {
@@ -167,7 +171,7 @@ export function createApp(options: CreateAppOptions = {}) {
       if (requireTenantAccess) {
         await requireTenantAccess(resolveMediaAuthorization(req));
       }
-      res.json({ uploadFileSizeLimitBytes });
+      res.json({ uploadFileSizeLimitBytes, directUploadEnabled: Boolean(directUploadStorage) });
     } catch (error) {
       handleAccessError(error, res, next);
     }

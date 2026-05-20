@@ -34,7 +34,23 @@ describe("createApp", () => {
     }))
       .get("/api/config")
       .expect(200)
-      .expect({ uploadFileSizeLimitBytes: 1234 });
+      .expect({ uploadFileSizeLimitBytes: 1234, directUploadEnabled: false });
+  });
+
+  it("exposes direct upload availability when storage is configured", async () => {
+    await request(createApp({
+      workspaceRoot: "unused",
+      runJobs: false,
+      uploadFileSizeLimitBytes: 1234,
+      directUploadStorage: {
+        createSignedUploadUrl: vi.fn(),
+        getUploadedObjectSize: vi.fn(),
+        downloadObjectToFile: vi.fn()
+      }
+    }))
+      .get("/api/config")
+      .expect(200)
+      .expect({ uploadFileSizeLimitBytes: 1234, directUploadEnabled: true });
   });
 
   it("starts project retention cleanup with the configured retention window", () => {
@@ -104,7 +120,7 @@ describe("createApp", () => {
       .get("/api/config")
       .set("Authorization", "Bearer clerk-token")
       .expect(200)
-      .expect({ uploadFileSizeLimitBytes: 1234 });
+      .expect({ uploadFileSizeLimitBytes: 1234, directUploadEnabled: false });
 
     expect(requireTenantAccess).toHaveBeenCalledWith("Bearer clerk-token");
   });

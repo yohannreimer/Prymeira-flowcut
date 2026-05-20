@@ -5,7 +5,10 @@ import { withTempDir } from "../../test/fixtures";
 import {
   buildR2PublicUrl,
   createR2ObjectKey,
+  createSignedR2UploadUrl,
+  downloadR2ObjectToFile,
   getR2ConfigFromEnv,
+  getR2ObjectSize,
   uploadFileToR2
 } from "./r2-storage";
 
@@ -88,6 +91,86 @@ describe("uploadFileToR2", () => {
         Body: expect.any(Uint8Array),
         ContentType: "video/mp4"
       });
+    });
+  });
+});
+
+describe("createSignedR2UploadUrl", () => {
+  it("signs a PUT URL for browser uploads", async () => {
+    const getSignedUrl = vi.fn().mockResolvedValue("https://storage.test/signed-put");
+    const send = vi.fn();
+
+    const url = await createSignedR2UploadUrl({
+      objectKey: "workspaces/workspace_123/jobs/job_123/source/video.mp4",
+      contentType: "video/mp4",
+      sizeBytes: 123,
+      config: {
+        accessKeyId: "access-key",
+        secretAccessKey: "secret-key",
+        endpoint: "https://account.r2.cloudflarestorage.com",
+        bucket: "mediafactory-temp",
+        publicBaseUrl: "https://pub-example.r2.dev"
+      },
+      client: { send },
+      getSignedUrl
+    });
+
+    expect(url).toBe("https://storage.test/signed-put");
+    expect(getSignedUrl).toHaveBeenCalledTimes(1);
+    expect(getSignedUrl.mock.calls[0][1].input).toMatchObject({
+      Bucket: "mediafactory-temp",
+      Key: "workspaces/workspace_123/jobs/job_123/source/video.mp4",
+      ContentType: "video/mp4"
+    });
+    expect(getSignedUrl.mock.calls[0][1].input).not.toHaveProperty("ContentLength");
+  });
+});
+
+describe("getR2ObjectSize", () => {
+  it("reads object size with HEAD", async () => {
+    const send = vi.fn().mockResolvedValue({ ContentLength: 456 });
+
+    await expect(getR2ObjectSize({
+      objectKey: "workspaces/workspace_123/jobs/job_123/source/video.mp4",
+      config: {
+        accessKeyId: "access-key",
+        secretAccessKey: "secret-key",
+        endpoint: "https://account.r2.cloudflarestorage.com",
+        bucket: "mediafactory-temp",
+        publicBaseUrl: "https://pub-example.r2.dev"
+      },
+      client: { send }
+    })).resolves.toBe(456);
+
+    expect(send.mock.calls[0][0].input).toMatchObject({
+      Bucket: "mediafactory-temp",
+      Key: "workspaces/workspace_123/jobs/job_123/source/video.mp4"
+    });
+  });
+});
+
+describe("downloadR2ObjectToFile", () => {
+  it("writes an R2 object stream to a local file", async () => {
+    await withTempDir("media-factory-r2-download-", async (dir) => {
+      const outputPath = path.join(dir, "uploads", "source.mp4");
+      const send = vi.fn().mockResolvedValue({
+        Body: new Blob(["video-bytes"]).stream()
+      });
+
+      await downloadR2ObjectToFile({
+        objectKey: "workspaces/workspace_123/jobs/job_123/source/video.mp4",
+        outputPath,
+        config: {
+          accessKeyId: "access-key",
+          secretAccessKey: "secret-key",
+          endpoint: "https://account.r2.cloudflarestorage.com",
+          bucket: "mediafactory-temp",
+          publicBaseUrl: "https://pub-example.r2.dev"
+        },
+        client: { send }
+      });
+
+      await expect(fs.readFile(outputPath, "utf8")).resolves.toBe("video-bytes");
     });
   });
 });

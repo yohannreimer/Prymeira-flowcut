@@ -29,6 +29,13 @@ import { runMotionJob, type RunMotionJobInput } from "../jobs/run-motion-job";
 import { runProjectJob, type RunProjectJobInput } from "../jobs/run-project-job";
 import { runYoutubePackageJob, type RunYoutubePackageJobInput } from "../jobs/run-youtube-package-job";
 import type { ProjectJob } from "../jobs/job-store";
+import {
+  InMemoryUploadSessionRepository,
+  UploadSessionError,
+  completeUploadSession,
+  createUploadSession,
+  type UploadSession
+} from "../media-factory-saas/upload-sessions";
 import { getYouTubeCredentialsFromEnv, publishYouTubeVideo } from "../media-factory/youtube-publisher";
 import { PrymeiraTenantError, getTenantProjectRoot, type PrymeiraTenantContext } from "../prymeira/tenant";
 import { touchProjectActivity } from "../project-retention";
@@ -76,6 +83,28 @@ const updateSectionRequestSchema = z.object({
     motion: sectionMotionTreatmentPatchSchema.optional()
   }).optional()
 }).strict();
+const directUploadRequestSchema = z.object({
+  fileName: z.string().trim().min(1),
+  contentType: z.string().trim().min(1),
+  sizeBytes: z.number().int().positive()
+}).strict();
+const completeDirectUploadRequestSchema = z.object({
+  cutPreset: cutPresetSchema.optional()
+}).default({});
+
+export type ProjectDirectUploadStorage = {
+  createSignedUploadUrl(input: {
+    storageKey: string;
+    contentType: string;
+    sizeBytes: number;
+  }): Promise<string>;
+  getUploadedObjectSize(storageKey: string): Promise<number>;
+  downloadObjectToFile(input: {
+    storageKey: string;
+    outputPath: string;
+  }): Promise<void>;
+  deleteObject?(storageKey: string): Promise<void>;
+};
 
 export type ProjectRouteOptions = {
   workspaceRoot: string;
@@ -89,6 +118,7 @@ export type ProjectRouteOptions = {
   runYoutubePackageJob?: (input: RunYoutubePackageJobInput) => Promise<void>;
   uploadFileSizeLimitBytes?: number;
   requireTenantAccess?: (authorization: string | undefined) => Promise<PrymeiraTenantContext>;
+  directUploadStorage?: ProjectDirectUploadStorage;
 };
 
 type ProjectRouteContext = {
@@ -112,6 +142,7 @@ export function createProjectRouter(options: ProjectRouteOptions) {
   const motionJobRunner = options.runMotionJob ?? runMotionJob;
   const exportJobRunner = options.runExportJob ?? runExportJob;
   const youtubePackageJobRunner = options.runYoutubePackageJob ?? runYoutubePackageJob;
+  const uploadSessions = new InMemoryUploadSessionRepository();
 
   async function resolveRouteContext(req: express.Request): Promise<ProjectRouteContext> {
     if (!options.requireTenantAccess) {
@@ -207,6 +238,105 @@ export function createProjectRouter(options: ProjectRouteOptions) {
       res.status(201).json({ projectId, job: serializeJob(job, context.workspaceRoot) });
     } catch (error) {
       handleTenantError(error, res, next);
+    }
+  });
+
+  router.post("/uploads", async (req, res, next) => {
+    try {
+      if (!options.directUploadStorage) {
+        res.status(404).json({ error: "Direct upload storage is not configured" });
+        return;
+      }
+
+      const body = directUploadRequestSchema.parse(req.body);
+      const context = getRouteContext(res);
+      const workspaceId = context.tenant?.workspaceId ?? "local";
+      const upload = await createUploadSession({
+        repo: uploadSessions,
+        workspaceId,
+        uploaderCustomerId: null,
+        fileName: body.fileName,
+        contentType: body.contentType,
+        sizeBytes: body.sizeBytes,
+        limits: context.tenant?.limits ?? {}
+      });
+      const uploadUrl = await options.directUploadStorage.createSignedUploadUrl({
+        storageKey: upload.storageKey,
+        contentType: upload.contentType,
+        sizeBytes: upload.sizeBytes
+      });
+
+      res.status(201).json({ upload: serializeUpload(upload), uploadUrl });
+    } catch (error) {
+      handleUploadError(error, res, next);
+    }
+  });
+
+  router.post("/uploads/:uploadId/complete", async (req, res, next) => {
+    try {
+      if (!options.directUploadStorage) {
+        res.status(404).json({ error: "Direct upload storage is not configured" });
+        return;
+      }
+
+      const body = completeDirectUploadRequestSchema.parse(req.body ?? {});
+      const context = getRouteContext(res);
+      const workspaceId = context.tenant?.workspaceId ?? "local";
+      const existingUpload = await uploadSessions.findById(req.params.uploadId);
+      if (!existingUpload || existingUpload.workspaceId !== workspaceId) {
+        throw new UploadSessionError(404, "upload_not_found", "Upload session not found.");
+      }
+
+      const observedSizeBytes = await options.directUploadStorage.getUploadedObjectSize(existingUpload.storageKey);
+      const upload = await completeUploadSession({
+        repo: uploadSessions,
+        workspaceId,
+        uploadId: existingUpload.id,
+        observedSizeBytes
+      });
+      const projectId = `project_${crypto.randomUUID()}`;
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
+      const safeExt = getSafeSourceExtension(upload.fileName);
+      const sourcePath = path.join(workspace.uploads, `source${safeExt}`);
+      await options.directUploadStorage.downloadObjectToFile({
+        storageKey: upload.storageKey,
+        outputPath: sourcePath
+      });
+      if (options.directUploadStorage.deleteObject) {
+        await Promise.resolve(options.directUploadStorage.deleteObject(upload.storageKey)).catch(() => undefined);
+      }
+
+      const job = options.jobs.create({
+        projectId,
+        sourcePath,
+        workspaceId: context.tenant?.workspaceId ?? null
+      });
+
+      if (options.runJobs) {
+        void Promise.resolve().then(() => projectJobRunner({
+          jobId: job.id,
+          workspace,
+          sourcePath,
+          jobs: options.jobs,
+          cutPresetId: body.cutPreset
+        })).catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : "Unknown error";
+          options.jobs.update(job.id, {
+            status: "failed",
+            stage: "failed",
+            message: `Project job failed: ${message}`,
+            error: message
+          });
+        });
+      }
+
+      res.status(201).json({
+        projectId,
+        upload: serializeUpload(upload),
+        job: serializeJob(job, context.workspaceRoot)
+      });
+    } catch (error) {
+      handleUploadError(error, res, next);
     }
   });
 
@@ -841,6 +971,46 @@ function handleTenantError(error: unknown, res: express.Response, next: express.
   }
 
   next(error);
+}
+
+function handleUploadError(error: unknown, res: express.Response, next: express.NextFunction) {
+  if (error instanceof UploadSessionError) {
+    res.status(error.statusCode).json({
+      error: {
+        code: error.code,
+        message: error.message
+      }
+    });
+    return;
+  }
+
+  if (error instanceof z.ZodError) {
+    res.status(400).json({
+      error: {
+        code: "invalid_request",
+        message: "Invalid request body."
+      }
+    });
+    return;
+  }
+
+  handleTenantError(error, res, next);
+}
+
+function serializeUpload(upload: UploadSession) {
+  return {
+    id: upload.id,
+    jobId: upload.jobId,
+    workspaceId: upload.workspaceId,
+    uploaderCustomerId: upload.uploaderCustomerId,
+    status: upload.status,
+    fileName: upload.fileName,
+    contentType: upload.contentType,
+    sizeBytes: upload.sizeBytes,
+    storageKey: upload.storageKey,
+    createdAt: upload.createdAt,
+    uploadedAt: upload.uploadedAt
+  };
 }
 
 function serializePlan(plan: EditPlan) {

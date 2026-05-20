@@ -412,7 +412,8 @@ export function App() {
     try {
       const result = await uploadVideo(file, {
         uploadFileSizeLimitBytes: uploadConfig?.uploadFileSizeLimitBytes,
-        cutPresetId
+        cutPresetId,
+        directUploadEnabled: uploadConfig.directUploadEnabled
       });
       setJob(result.job);
       setActiveWorkspaceTab("review");

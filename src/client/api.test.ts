@@ -343,6 +343,68 @@ describe("api client", () => {
     expect(form.get("cutPreset")).toBe("aggressive");
   });
 
+  it("uploads videos directly to signed storage when direct upload is enabled", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        upload: {
+          id: "upload_123",
+          storageKey: "workspaces/workspace_123/jobs/job_123/source/video.mp4"
+        },
+        uploadUrl: "https://r2.test/signed-put"
+      }), {
+        headers: { "content-type": "application/json" }
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        projectId: "project_123",
+        job: {
+          id: "job_123",
+          projectId: "project_123",
+          status: "queued",
+          stage: "queued",
+          message: "Waiting",
+          sourcePath: "/tmp/source.mov",
+          outputPath: null,
+          outputUrl: null,
+          planPath: null,
+          warnings: [],
+          error: null
+        }
+      }), {
+        headers: { "content-type": "application/json" }
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    const xhr = installFakeUploadXhr();
+
+    await expect(uploadVideo(new File(["fake"], "sample.mp4", { type: "video/mp4" }), {
+      uploadFileSizeLimitBytes: 1024,
+      cutPresetId: "aggressive",
+      directUploadEnabled: true
+    })).resolves.toMatchObject({
+      projectId: "project_123",
+      job: { id: "job_123" }
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/projects/uploads", expect.objectContaining({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        fileName: "sample.mp4",
+        contentType: "video/mp4",
+        sizeBytes: 4
+      })
+    }));
+    const putRequest = xhr.instances[0]!;
+    expect(putRequest.method).toBe("PUT");
+    expect(putRequest.url).toBe("https://r2.test/signed-put");
+    expect(putRequest.requestHeaders).toEqual({ "content-type": "video/mp4" });
+    expect(putRequest.sentBody).toBeInstanceOf(File);
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/projects/uploads/upload_123/complete", expect.objectContaining({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cutPreset: "aggressive" })
+    }));
+  });
+
   it("starts AI motion planning", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       job: {
@@ -446,12 +508,16 @@ describe("api client", () => {
 
   it("fetches the upload configuration", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      uploadFileSizeLimitBytes: 5368709120
+      uploadFileSizeLimitBytes: 5368709120,
+      directUploadEnabled: true
     }), {
       headers: { "content-type": "application/json" }
     })));
 
-    await expect(fetchUploadConfig()).resolves.toEqual({ uploadFileSizeLimitBytes: 5368709120 });
+    await expect(fetchUploadConfig()).resolves.toEqual({
+      uploadFileSizeLimitBytes: 5368709120,
+      directUploadEnabled: true
+    });
   });
 
   it("fetches sanitized edit plans", async () => {

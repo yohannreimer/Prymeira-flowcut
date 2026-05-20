@@ -211,6 +211,107 @@ describe("project routes", () => {
     });
   });
 
+  it("creates a direct-to-R2 upload session for tenant uploads", async () => {
+    await withTempDir("ai-editor-route-direct-upload-", async (dir) => {
+      const createSignedUploadUrl = vi.fn().mockResolvedValue("https://r2.test/signed-put");
+      const requireTenantAccess = tenantAccess();
+      const app = createApp({
+        workspaceRoot: dir,
+        jobs: createJobStore(),
+        runJobs: false,
+        requireTenantAccess,
+        directUploadStorage: {
+          createSignedUploadUrl,
+          getUploadedObjectSize: vi.fn(),
+          downloadObjectToFile: vi.fn()
+        }
+      });
+
+      const response = await request(app)
+        .post("/api/projects/uploads")
+        .set("Authorization", "Bearer clerk-token")
+        .send({
+          fileName: "aula longa.mp4",
+          contentType: "video/mp4",
+          sizeBytes: 612
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.upload).toMatchObject({
+        id: expect.stringMatching(/^upload_/),
+        status: "pending",
+        fileName: "aula longa.mp4",
+        contentType: "video/mp4",
+        sizeBytes: 612
+      });
+      expect(response.body.uploadUrl).toBe("https://r2.test/signed-put");
+      expect(createSignedUploadUrl).toHaveBeenCalledWith(expect.objectContaining({
+        contentType: "video/mp4",
+        sizeBytes: 612,
+        storageKey: expect.stringContaining("workspaces/workspace_123/jobs/")
+      }));
+    });
+  });
+
+  it("completes a direct upload, downloads the R2 object, and creates a project job", async () => {
+    await withTempDir("ai-editor-route-direct-complete-", async (dir) => {
+      const jobs = createJobStore();
+      const downloadObjectToFile = vi.fn(async ({ outputPath }: { outputPath: string }) => {
+        await writeFile(outputPath, "video-bytes");
+      });
+      const deleteObject = vi.fn();
+      const requireTenantAccess = tenantAccess();
+      const app = createApp({
+        workspaceRoot: dir,
+        jobs,
+        runJobs: false,
+        requireTenantAccess,
+        directUploadStorage: {
+          createSignedUploadUrl: vi.fn().mockResolvedValue("https://r2.test/signed-put"),
+          getUploadedObjectSize: vi.fn().mockResolvedValue(612),
+          downloadObjectToFile,
+          deleteObject
+        }
+      });
+      const created = await request(app)
+        .post("/api/projects/uploads")
+        .set("Authorization", "Bearer clerk-token")
+        .send({
+          fileName: "aula longa.mp4",
+          contentType: "video/mp4",
+          sizeBytes: 612
+        });
+
+      const response = await request(app)
+        .post(`/api/projects/uploads/${created.body.upload.id}/complete`)
+        .set("Authorization", "Bearer clerk-token")
+        .send({ cutPreset: "normal" });
+
+      expect(response.status).toBe(201);
+      expect(response.body.projectId).toMatch(/^project_/);
+      expect(response.body.job).toMatchObject({
+        projectId: response.body.projectId,
+        status: "queued"
+      });
+      const sourcePath = path.join(
+        dir,
+        "workspaces",
+        "workspace_123",
+        "projects",
+        response.body.projectId,
+        "uploads",
+        "source.mp4"
+      );
+      await expect(readFile(sourcePath, "utf8")).resolves.toBe("video-bytes");
+      expect(downloadObjectToFile).toHaveBeenCalledWith(expect.objectContaining({
+        outputPath: sourcePath,
+        storageKey: created.body.upload.storageKey
+      }));
+      expect(deleteObject).toHaveBeenCalledWith(created.body.upload.storageKey);
+      expect(jobs.get(response.body.job.id)?.sourcePath).toBe(sourcePath);
+    });
+  });
+
   it("returns 401 when tenant auth is configured and the token is missing", async () => {
     await withTempDir("ai-editor-route-missing-token-", async (dir) => {
       const requireTenantAccess = missingTenantAccess();
