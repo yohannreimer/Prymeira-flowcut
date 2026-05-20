@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ClerkLoading,
   ClerkProvider,
@@ -10,12 +10,41 @@ import {
 import { configureApiAuth } from "./api";
 
 function ApiAuthBridge({ children }: { children: ReactNode }) {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded } = useAuth();
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    configureApiAuth(() => getToken());
-    return () => configureApiAuth(null);
-  }, [getToken]);
+    let isStale = false;
+    setIsReady(false);
+
+    if (!isLoaded) {
+      configureApiAuth(null);
+      return () => configureApiAuth(null);
+    }
+
+    void getToken()
+      .then((token) => {
+        if (isStale) return;
+        if (!token) {
+          configureApiAuth(null);
+          return;
+        }
+        configureApiAuth(() => getToken());
+        setIsReady(true);
+      })
+      .catch(() => {
+        if (!isStale) configureApiAuth(null);
+      });
+
+    return () => {
+      isStale = true;
+      configureApiAuth(null);
+    };
+  }, [getToken, isLoaded]);
+
+  if (!isLoaded || !isReady) {
+    return <main className="auth-gate">Validando acesso...</main>;
+  }
 
   return <>{children}</>;
 }
