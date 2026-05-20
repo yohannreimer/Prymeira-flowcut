@@ -21,6 +21,10 @@ import {
   type MediaFactoryObjectStorage
 } from "./routes/media-factory-saas";
 import { createProjectRouter } from "./routes/projects";
+import {
+  startProjectRetentionCleanup as defaultStartProjectRetentionCleanup,
+  type startProjectRetentionCleanup
+} from "./project-retention";
 
 const PROJECT_ID_PATTERN = /^project_[A-Za-z0-9_-]+$/;
 
@@ -42,6 +46,10 @@ export type CreateAppOptions = {
   runExportJob?: (input: RunExportJobInput) => Promise<void>;
   runYoutubePackageJob?: (input: RunYoutubePackageJobInput) => Promise<void>;
   uploadFileSizeLimitBytes?: number;
+  projectRetentionMinutes?: number;
+  projectCleanupIntervalMs?: number;
+  runProjectRetentionCleanup?: boolean;
+  startProjectRetentionCleanup?: typeof startProjectRetentionCleanup;
   requireTenantAccess?: (authorization: string | undefined) => Promise<PrymeiraTenantContext>;
   mediaFactorySaas?: MediaFactorySaasOptions;
 };
@@ -53,7 +61,9 @@ export function createApp(options: CreateAppOptions = {}) {
   }
   const workspaceRoot = options.workspaceRoot ?? config.workspaceRoot;
   const uploadFileSizeLimitBytes = options.uploadFileSizeLimitBytes ?? config.uploadFileSizeLimitBytes;
+  const projectRetentionMinutes = options.projectRetentionMinutes ?? config.projectRetentionMinutes;
   const jobs = options.jobs ?? createJobStore();
+  const startProjectRetentionCleanup = options.startProjectRetentionCleanup ?? defaultStartProjectRetentionCleanup;
   const requireTenantAccess = options.requireTenantAccess ?? (config.prymeiraAccountApiUrl
     ? createPrymeiraTenantAccess({
       accountApiUrl: config.prymeiraAccountApiUrl,
@@ -63,6 +73,14 @@ export function createApp(options: CreateAppOptions = {}) {
   const app = express();
 
   app.use(express.json());
+  if (options.runProjectRetentionCleanup ?? true) {
+    startProjectRetentionCleanup({
+      workspaceRoot,
+      jobs,
+      retentionMs: projectRetentionMinutes * 60 * 1000,
+      intervalMs: options.projectCleanupIntervalMs ?? 60 * 1000
+    });
+  }
   async function resolveRequestWorkspaceRoot(req: express.Request): Promise<string> {
     if (!requireTenantAccess) {
       return workspaceRoot;

@@ -14,6 +14,7 @@ import {
   listProjects,
   publishYoutubeVideo,
   rerenderProject,
+  touchProjectActivity,
   updateCaption,
   updateCaptionSettings,
   updateSection,
@@ -185,6 +186,15 @@ describe("api client", () => {
     await deleteProject("project_123");
 
     expect(fetchMock).toHaveBeenCalledWith("/api/projects/project_123", { method: "DELETE" });
+  });
+
+  it("records project activity for an open workspace session", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await touchProjectActivity("project_123");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/projects/project_123/activity", { method: "POST" });
   });
 
   it("uses server-provided output URLs from job responses", async () => {

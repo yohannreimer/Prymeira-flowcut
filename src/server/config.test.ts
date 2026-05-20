@@ -6,6 +6,7 @@ describe("getConfig", () => {
   const originalWorkspace = process.env.AI_EDITOR_WORKSPACE;
   const originalPrymeiraAccountApiUrl = process.env.PRYMEIRA_ACCOUNT_API_URL;
   const originalPrymeiraProductKey = process.env.PRYMEIRA_PRODUCT_KEY;
+  const originalProjectRetentionMinutes = process.env.AI_EDITOR_PROJECT_RETENTION_MINUTES;
 
   afterEach(() => {
     if (originalWorkspace === undefined) {
@@ -22,6 +23,11 @@ describe("getConfig", () => {
       delete process.env.PRYMEIRA_PRODUCT_KEY;
     } else {
       process.env.PRYMEIRA_PRODUCT_KEY = originalPrymeiraProductKey;
+    }
+    if (originalProjectRetentionMinutes === undefined) {
+      delete process.env.AI_EDITOR_PROJECT_RETENTION_MINUTES;
+    } else {
+      process.env.AI_EDITOR_PROJECT_RETENTION_MINUTES = originalProjectRetentionMinutes;
     }
   });
 
@@ -45,5 +51,23 @@ describe("getConfig", () => {
       prymeiraAccountApiUrl: "https://account-api.test",
       prymeiraProductKey: "media"
     });
+  });
+
+  it("defaults project retention to 30 minutes", () => {
+    delete process.env.AI_EDITOR_PROJECT_RETENTION_MINUTES;
+
+    expect(getConfig().projectRetentionMinutes).toBe(30);
+  });
+
+  it("reads project retention from env", () => {
+    process.env.AI_EDITOR_PROJECT_RETENTION_MINUTES = "15";
+
+    expect(getConfig().projectRetentionMinutes).toBe(15);
+  });
+
+  it("rejects invalid project retention values", () => {
+    process.env.AI_EDITOR_PROJECT_RETENTION_MINUTES = "0";
+
+    expect(() => getConfig()).toThrow("Invalid AI_EDITOR_PROJECT_RETENTION_MINUTES");
   });
 });

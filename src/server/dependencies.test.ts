@@ -46,6 +46,7 @@ describe("checkDependencies", () => {
         ffprobePath: "ffprobe",
         autoEditorPath: "auto-editor",
         uploadFileSizeLimitBytes: 1024,
+        projectRetentionMinutes: 30,
         prymeiraAccountApiUrl: null,
         prymeiraProductKey: "media"
       },
@@ -80,6 +81,7 @@ describe("checkDependencies", () => {
         ffprobePath: "ffprobe",
         autoEditorPath: "auto-editor",
         uploadFileSizeLimitBytes: 1024,
+        projectRetentionMinutes: 30,
         prymeiraAccountApiUrl: null,
         prymeiraProductKey: "media"
       },

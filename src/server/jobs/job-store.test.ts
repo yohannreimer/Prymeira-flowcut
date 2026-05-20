@@ -39,6 +39,21 @@ describe("createJobStore", () => {
     expect(created.workspaceId).toBeNull();
     expect(jobs.getForWorkspace(created.id, "workspace_123")).toMatchObject({ id: created.id });
   });
+
+  it("lists defensive copies of stored jobs", () => {
+    const jobs = createJobStore();
+    const created = jobs.create({ projectId: "project_123", sourcePath: "/tmp/source.mp4" });
+
+    const listed = jobs.list();
+    listed[0]!.status = "failed";
+    listed[0]!.warnings.push("mutated from list");
+
+    expect(listed).toHaveLength(1);
+    expect(jobs.get(created.id)).toMatchObject({
+      status: "queued",
+      warnings: []
+    });
+  });
 });
 
 const invalidUpdate: JobUpdate = {

@@ -1,4 +1,4 @@
-import { copyFile, readFile, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { access, copyFile, readFile, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import express from "express";
@@ -31,6 +31,7 @@ import { runYoutubePackageJob, type RunYoutubePackageJobInput } from "../jobs/ru
 import type { ProjectJob } from "../jobs/job-store";
 import { getYouTubeCredentialsFromEnv, publishYouTubeVideo } from "../media-factory/youtube-publisher";
 import { PrymeiraTenantError, getTenantProjectRoot, type PrymeiraTenantContext } from "../prymeira/tenant";
+import { touchProjectActivity } from "../project-retention";
 import { assessPublishReadiness } from "../qa/publish-readiness";
 import { isYoutubePackageAssetName, readYoutubePackageSummary } from "../youtube/youtube-package-summary";
 
@@ -241,6 +242,28 @@ export function createProjectRouter(options: ProjectRouteOptions) {
       await rm(path.join(context.workspaceRoot, projectId), { recursive: true, force: true });
       res.status(204).end();
     } catch (error) {
+      handleTenantError(error, res, next);
+    }
+  });
+
+  router.post("/:projectId/activity", async (req, res, next) => {
+    try {
+      const { projectId } = req.params;
+      if (!PROJECT_ID_PATTERN.test(projectId)) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const context = getRouteContext(res);
+      const projectRoot = path.join(context.workspaceRoot, projectId);
+      await access(projectRoot);
+      await touchProjectActivity(projectRoot);
+      res.status(204).end();
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
       handleTenantError(error, res, next);
     }
   });

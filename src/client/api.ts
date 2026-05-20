@@ -110,6 +110,11 @@ export async function deleteProject(projectId: string): Promise<void> {
   if (!response.ok) throw new Error(await readErrorMessage(response));
 }
 
+export async function touchProjectActivity(projectId: string): Promise<void> {
+  const response = await request(`/api/projects/${encodeURIComponent(projectId)}/activity`, { method: "POST" });
+  if (!response.ok) throw new Error(await readErrorMessage(response));
+}
+
 export async function uploadVideo(
   file: File,
   options: UploadVideoOptions = {}

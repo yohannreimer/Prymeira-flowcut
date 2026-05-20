@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { EditPlanSummary, ProjectJob, UploadConfig, YoutubePackageSummary } from "./api";
 import { formatBytes } from "./api";
+import { touchProjectActivity } from "./api";
 import type { ProjectLibraryItem } from "../shared/project-library";
 import { AppShell } from "./components/AppShell";
 import { Sidebar } from "./components/Sidebar";
@@ -14,6 +15,8 @@ import { Publish } from "./steps/Publish";
 function isActiveJob(job: ProjectJob | null): boolean {
   return job !== null && ["queued", "running"].includes(job.status);
 }
+
+const PROJECT_ACTIVITY_HEARTBEAT_MS = 60 * 1000;
 
 export function deriveCurrentStep(
   file: File | null,
@@ -151,6 +154,12 @@ export function GuidedShell({
   const isCaptionJobRunning = isActiveJob(captionJob);
   const isPackageRunning = isActiveJob(youtubePackageJob);
   const hasExport = Boolean(exportJob?.outputUrl);
+  const activeProjectId = job?.projectId
+    ?? captionJob?.projectId
+    ?? youtubePackageJob?.projectId
+    ?? exportJob?.projectId
+    ?? editPlan?.projectId
+    ?? null;
   const videoOrientation: "horizontal" | "vertical" =
     editPlan && editPlan.source.width >= editPlan.source.height ? "horizontal" : "vertical";
 
@@ -174,6 +183,17 @@ export function GuidedShell({
     if (isCaptionJobRunning) { setViewStep(3); return; }
     if (isPackageRunning) { setViewStep(4); }
   }, [isUploading, isCutRunning, isCaptionJobRunning, isPackageRunning]);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+
+    const markActive = () => {
+      void touchProjectActivity(activeProjectId).catch(() => undefined);
+    };
+    markActive();
+    const interval = window.setInterval(markActive, PROJECT_ACTIVITY_HEARTBEAT_MS);
+    return () => window.clearInterval(interval);
+  }, [activeProjectId]);
 
   const currentStep = viewStep;
 

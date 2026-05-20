@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { setImmediate as waitForBackgroundJob } from "node:timers/promises";
 import path from "node:path";
 import request from "supertest";
@@ -89,6 +89,31 @@ describe("project routes", () => {
         expect.objectContaining({ kind: "music" }),
         expect.objectContaining({ kind: "captions_plan" })
       ]));
+    });
+  });
+
+  it("records project activity for a live workspace session", async () => {
+    await withTempDir("ai-editor-route-activity-", async (dir) => {
+      const projectId = "project_123";
+      const projectRoot = path.join(dir, projectId);
+      await mkdir(projectRoot, { recursive: true });
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
+
+      await request(app)
+        .post(`/api/projects/${projectId}/activity`)
+        .expect(204);
+
+      await expect(stat(path.join(projectRoot, ".last-activity"))).resolves.toBeTruthy();
+    });
+  });
+
+  it("does not create activity markers for missing projects", async () => {
+    await withTempDir("ai-editor-route-activity-missing-", async (dir) => {
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
+
+      await request(app)
+        .post("/api/projects/project_missing/activity")
+        .expect(404);
     });
   });
 

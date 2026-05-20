@@ -62,6 +62,9 @@ export function createJobStore() {
       if (job.workspaceId && job.workspaceId !== workspaceId) return null;
       return cloneJob(job);
     },
+    list() {
+      return Array.from(jobs.values()).map(cloneJob);
+    },
     update(id: string, patch: JobUpdate) {
       const current = jobs.get(id);
       if (!current) return null;

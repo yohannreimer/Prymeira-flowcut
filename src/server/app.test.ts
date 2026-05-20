@@ -4,6 +4,7 @@ import { createApp } from "./app";
 import { withTempDir } from "../test/fixtures";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createJobStore } from "./jobs/job-store";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -34,6 +35,28 @@ describe("createApp", () => {
       .get("/api/config")
       .expect(200)
       .expect({ uploadFileSizeLimitBytes: 1234 });
+  });
+
+  it("starts project retention cleanup with the configured retention window", () => {
+    const jobs = createJobStore();
+    const stopCleanup = vi.fn();
+    const startProjectRetentionCleanup = vi.fn(() => stopCleanup);
+
+    createApp({
+      workspaceRoot: "/workspace",
+      jobs,
+      runJobs: false,
+      projectRetentionMinutes: 45,
+      projectCleanupIntervalMs: 1000,
+      startProjectRetentionCleanup
+    });
+
+    expect(startProjectRetentionCleanup).toHaveBeenCalledWith({
+      workspaceRoot: "/workspace",
+      jobs,
+      retentionMs: 45 * 60 * 1000,
+      intervalMs: 1000
+    });
   });
 
   it("protects upload configuration when tenant access is enabled", async () => {
