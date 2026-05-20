@@ -27,6 +27,94 @@ afterEach(() => {
 });
 
 describe("api client", () => {
+  class FakeUploadXMLHttpRequest {
+    static response = {
+      status: 201,
+      responseText: JSON.stringify({
+        projectId: "project_123",
+        job: {
+          id: "job_123",
+          projectId: "project_123",
+          status: "queued",
+          stage: "queued",
+          message: "Waiting",
+          sourcePath: "/tmp/source.mov",
+          outputPath: null,
+          outputUrl: null,
+          planPath: null,
+          warnings: [],
+          error: null
+        }
+      }),
+      contentType: "application/json"
+    };
+    static instances: FakeUploadXMLHttpRequest[] = [];
+
+    method: string | null = null;
+    url: string | null = null;
+    async: boolean | null = null;
+    requestHeaders: Record<string, string> = {};
+    sentBody: BodyInit | null = null;
+    status = 0;
+    responseText = "";
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    ontimeout: (() => void) | null = null;
+
+    constructor() {
+      FakeUploadXMLHttpRequest.instances.push(this);
+    }
+
+    open(method: string, url: string, async = true) {
+      this.method = method;
+      this.url = url;
+      this.async = async;
+    }
+
+    setRequestHeader(name: string, value: string) {
+      this.requestHeaders[name] = value;
+    }
+
+    getResponseHeader(name: string) {
+      return name.toLowerCase() === "content-type" ? FakeUploadXMLHttpRequest.response.contentType : null;
+    }
+
+    send(body?: BodyInit | null) {
+      this.sentBody = body ?? null;
+      queueMicrotask(() => {
+        this.status = FakeUploadXMLHttpRequest.response.status;
+        this.responseText = FakeUploadXMLHttpRequest.response.responseText;
+        this.onload?.();
+      });
+    }
+  }
+
+  function installFakeUploadXhr() {
+    FakeUploadXMLHttpRequest.instances = [];
+    FakeUploadXMLHttpRequest.response = {
+      status: 201,
+      responseText: JSON.stringify({
+        projectId: "project_123",
+        job: {
+          id: "job_123",
+          projectId: "project_123",
+          status: "queued",
+          stage: "queued",
+          message: "Waiting",
+          sourcePath: "/tmp/source.mov",
+          outputPath: null,
+          outputUrl: null,
+          planPath: null,
+          warnings: [],
+          error: null
+        }
+      }),
+      contentType: "application/json"
+    };
+    vi.stubGlobal("XMLHttpRequest", FakeUploadXMLHttpRequest);
+    return FakeUploadXMLHttpRequest;
+  }
+
   it("attaches the configured Clerk bearer token to JSON requests", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ projects: [] }), {
       headers: { "content-type": "application/json" }
@@ -231,7 +319,12 @@ describe("api client", () => {
   });
 
   it("falls back to response text for non-JSON upload errors", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("Upload exploded", { status: 500 })));
+    const xhr = installFakeUploadXhr();
+    xhr.response = {
+      status: 500,
+      responseText: "Upload exploded",
+      contentType: "text/plain"
+    };
 
     await expect(uploadVideo(new File(["fake"], "sample.mp4", { type: "video/mp4" }))).rejects.toThrow(
       "Upload exploded"
@@ -239,29 +332,14 @@ describe("api client", () => {
   });
 
   it("sends the selected cut preset with uploads", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      projectId: "project_123",
-      job: {
-        id: "job_123",
-        projectId: "project_123",
-        status: "queued",
-        stage: "queued",
-        message: "Waiting",
-        sourcePath: "/tmp/source.mov",
-        outputPath: null,
-        outputUrl: null,
-        planPath: null,
-        warnings: [],
-        error: null
-      }
-    }), {
-      headers: { "content-type": "application/json" }
-    }));
-    vi.stubGlobal("fetch", fetchMock);
+    const xhr = installFakeUploadXhr();
 
     await uploadVideo(new File(["fake"], "sample.mov", { type: "video/quicktime" }), { cutPresetId: "aggressive" });
 
-    const form = fetchMock.mock.calls[0][1].body as FormData;
+    const request = xhr.instances[0]!;
+    expect(request.method).toBe("POST");
+    expect(request.url).toBe("/api/projects");
+    const form = request.sentBody as FormData;
     expect(form.get("cutPreset")).toBe("aggressive");
   });
 
@@ -344,10 +422,16 @@ describe("api client", () => {
   });
 
   it("turns browser network failures into a useful local API message", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Load failed")));
+    class FailingXMLHttpRequest extends FakeUploadXMLHttpRequest {
+      override send(body?: BodyInit | null) {
+        this.sentBody = body ?? null;
+        queueMicrotask(() => this.onerror?.());
+      }
+    }
+    vi.stubGlobal("XMLHttpRequest", FailingXMLHttpRequest);
 
     await expect(uploadVideo(new File(["fake"], "sample.mp4", { type: "video/mp4" }))).rejects.toThrow(
-      /API local|localhost:4317/i
+      /upload|conexao|interrompido/i
     );
   });
 

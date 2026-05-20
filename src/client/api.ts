@@ -130,9 +130,7 @@ export async function uploadVideo(
   if (options.cutPresetId) {
     form.append("cutPreset", options.cutPresetId);
   }
-  const response = await request("/api/projects", { method: "POST", body: form });
-  if (!response.ok) throw new Error(await readErrorMessage(response));
-  return response.json();
+  return uploadVideoWithXhr(form);
 }
 
 export async function fetchJob(jobId: string, options: FetchOptions = {}): Promise<ProjectJob> {
@@ -356,6 +354,46 @@ async function request(input: RequestInfo | URL, init: RequestInit = {}) {
       "Nao consegui conectar na API local em localhost:4317. Confere se o servidor ainda esta rodando e tenta de novo."
     );
   }
+}
+
+async function uploadVideoWithXhr(form: FormData): Promise<{ projectId: string; job: ProjectJob }> {
+  const token = authTokenProvider ? await authTokenProvider() : null;
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/projects", true);
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
+
+    xhr.onload = () => {
+      void (async () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText) as { projectId: string; job: ProjectJob });
+          } catch {
+            reject(new Error("A API respondeu o upload com JSON invalido."));
+          }
+          return;
+        }
+
+        const response = new Response(xhr.responseText, {
+          status: xhr.status,
+          headers: { "content-type": xhr.getResponseHeader("content-type") ?? "text/plain" }
+        });
+        reject(new Error(await readErrorMessage(response)));
+      })();
+    };
+
+    xhr.onerror = () => {
+      reject(new Error("Upload interrompido antes de chegar na API. Verifique a conexao e tente novamente."));
+    };
+    xhr.ontimeout = () => {
+      reject(new Error("Upload demorou demais e foi interrompido. Tente novamente com a conexao estavel."));
+    };
+
+    xhr.send(form);
+  });
 }
 
 function mergeRequestHeaders(headersInit: HeadersInit | undefined, token: string | null): Record<string, string> {
