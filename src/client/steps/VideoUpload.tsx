@@ -103,7 +103,7 @@ export function VideoUpload({
           background: "rgba(159,77,72,0.1)", border: "1px solid rgba(159,77,72,0.25)",
           color: "var(--danger)", fontSize: 12, marginBottom: 14
         }}>
-          {!isApiReady ? "API do Flowcut indisponivel. Aguarde o backend subir e recarregue." : isFileTooLarge ? "Arquivo acima do limite configurado." : error}
+          {error ?? (isFileTooLarge ? "Arquivo acima do limite configurado." : "API do Flowcut indisponivel. Aguarde o backend subir e recarregue.")}
         </div>
       )}
 

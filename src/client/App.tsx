@@ -403,7 +403,7 @@ export function App() {
   async function startUpload() {
     if (!file) return;
     if (!uploadConfig) {
-      setError("API do Flowcut indisponivel. Aguarde o backend subir e recarregue a pagina.");
+      setError("O Flowcut ainda nao confirmou sua autorizacao. Recarregue a pagina ou confira o acesso na Prymeira Account.");
       return;
     }
     setError(null);
