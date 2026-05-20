@@ -440,6 +440,23 @@ function FlowcutLoginLayout() {
             </div>
           </ClerkLoading>
           <SignedOut>
+            {/* Custom heading — replaces Clerk's default "Bem-vindo de volta" */}
+            <div style={{ marginBottom: 28 }}>
+              <h2 style={{
+                margin: 0,
+                fontSize: 22,
+                fontWeight: 700,
+                letterSpacing: "-0.02em",
+                lineHeight: 1.2,
+                color: "#f6f2e8",
+              }}>Acesse sua conta</h2>
+              <p style={{
+                margin: "6px 0 0",
+                fontSize: 14,
+                color: "#6a6460",
+                lineHeight: 1.5,
+              }}>Bem-vindo de volta ao Flowcut</p>
+            </div>
             <SignIn
               routing="hash"
               appearance={{
@@ -464,6 +481,11 @@ function FlowcutLoginLayout() {
                     border: "none",
                     padding: 0,
                   },
+                  header: { display: "none" },
+                  formButtonPrimary: { padding: "13px 20px", height: "46px", fontSize: "14px" },
+                  socialButtonsBlockButton: { padding: "12px 20px", height: "44px", gap: "10px" },
+                  socialButtonsBlockButtonText: { fontSize: "14px", fontWeight: "500" },
+                  formFieldInput: { height: "42px", padding: "0 14px" },
                   footer: { background: "transparent" },
                   footerAction: { background: "transparent" },
                 },
