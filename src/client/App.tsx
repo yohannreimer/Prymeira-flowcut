@@ -1943,7 +1943,8 @@ function getProjectJobProgress(job: ProjectJob) {
 function getProgressForStage(stage: string) {
   const progressByStage: Record<string, number> = {
     queued: 6,
-    probe: 16,
+    upload: 12,
+    probe: 20,
     analysis: 38,
     planning: 58,
     render: 78,
@@ -1966,6 +1967,7 @@ function getUploadSteps(): Array<{ id: string; label: string; description: strin
 function getProjectProcessingSteps(job: ProjectJob): Array<{ id: string; label: string; description: string; status: ProcessingStepStatus }> {
   const steps = [
     { id: "queued", label: "Fila", description: "Projeto recebido pelo servidor local." },
+    { id: "upload", label: "Receber arquivo", description: "Copiando o vídeo do R2 para o workspace." },
     { id: "probe", label: "Leitura", description: "Detectando duração, orientação, áudio e FPS." },
     { id: "analysis", label: "Pausas", description: "Rodando FFmpeg para encontrar trechos silenciosos." },
     { id: "planning", label: "Plano", description: "Montando cortes, seções inteligentes e tratamentos." },

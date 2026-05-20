@@ -253,11 +253,23 @@ describe("project routes", () => {
     });
   });
 
-  it("completes a direct upload, downloads the R2 object, and creates a project job", async () => {
+  it("completes a direct upload immediately, then downloads the R2 object in the background", async () => {
     await withTempDir("ai-editor-route-direct-complete-", async (dir) => {
       const jobs = createJobStore();
-      const downloadObjectToFile = vi.fn(async ({ outputPath }: { outputPath: string }) => {
-        await writeFile(outputPath, "video-bytes");
+      let finishDownload: () => void = () => {
+        throw new Error("Download did not start.");
+      };
+      let resolveDownloadStarted: (() => void) | null = null;
+      const downloadHasStarted = new Promise<void>((resolve) => {
+        resolveDownloadStarted = resolve;
+      });
+      const downloadObjectToFile = vi.fn(({ outputPath }: { outputPath: string }) => {
+        resolveDownloadStarted?.();
+        return new Promise<void>((resolveDownload) => {
+          finishDownload = () => {
+            void writeFile(outputPath, "video-bytes").then(resolveDownload);
+          };
+        });
       });
       const deleteObject = vi.fn();
       const requireTenantAccess = tenantAccess();
@@ -302,6 +314,17 @@ describe("project routes", () => {
         "uploads",
         "source.mp4"
       );
+      await downloadHasStarted;
+      await expect(readFile(sourcePath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      expect(jobs.get(response.body.job.id)).toMatchObject({
+        status: "running",
+        stage: "upload"
+      });
+
+      finishDownload();
+      await waitForBackgroundJob();
+      await waitForBackgroundJob();
+
       await expect(readFile(sourcePath, "utf8")).resolves.toBe("video-bytes");
       expect(downloadObjectToFile).toHaveBeenCalledWith(expect.objectContaining({
         outputPath: sourcePath,

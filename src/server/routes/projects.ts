@@ -20,7 +20,7 @@ import {
 import { exportSettingsSchema } from "../../shared/export-settings";
 import { manualRenderRequestSchema } from "../../shared/manual-edits";
 import { listProjectLibrary } from "../../shared/project-library";
-import { createProjectWorkspace } from "../workspace";
+import { createProjectWorkspace, type ProjectWorkspace } from "../workspace";
 import type { JobStore } from "../jobs/job-store";
 import { runCaptionJob, type RunCaptionJobInput } from "../jobs/run-caption-job";
 import { runExportJob, type RunExportJobInput } from "../jobs/run-export-job";
@@ -298,37 +298,23 @@ export function createProjectRouter(options: ProjectRouteOptions) {
       const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
       const safeExt = getSafeSourceExtension(upload.fileName);
       const sourcePath = path.join(workspace.uploads, `source${safeExt}`);
-      await options.directUploadStorage.downloadObjectToFile({
-        storageKey: upload.storageKey,
-        outputPath: sourcePath
-      });
-      if (options.directUploadStorage.deleteObject) {
-        await Promise.resolve(options.directUploadStorage.deleteObject(upload.storageKey)).catch(() => undefined);
-      }
-
       const job = options.jobs.create({
         projectId,
         sourcePath,
         workspaceId: context.tenant?.workspaceId ?? null
       });
 
-      if (options.runJobs) {
-        void Promise.resolve().then(() => projectJobRunner({
-          jobId: job.id,
-          workspace,
-          sourcePath,
-          jobs: options.jobs,
-          cutPresetId: body.cutPreset
-        })).catch((error: unknown) => {
-          const message = error instanceof Error ? error.message : "Unknown error";
-          options.jobs.update(job.id, {
-            status: "failed",
-            stage: "failed",
-            message: `Project job failed: ${message}`,
-            error: message
-          });
-        });
-      }
+      queueDirectUploadProjectJob({
+        directUploadStorage: options.directUploadStorage,
+        upload,
+        job,
+        workspace,
+        sourcePath,
+        jobs: options.jobs,
+        runJobs: options.runJobs,
+        projectJobRunner,
+        cutPresetId: body.cutPreset
+      });
 
       res.status(201).json({
         projectId,
@@ -995,6 +981,74 @@ function handleUploadError(error: unknown, res: express.Response, next: express.
   }
 
   handleTenantError(error, res, next);
+}
+
+function queueDirectUploadProjectJob({
+  directUploadStorage,
+  upload,
+  job,
+  workspace,
+  sourcePath,
+  jobs,
+  runJobs,
+  projectJobRunner,
+  cutPresetId
+}: {
+  directUploadStorage: ProjectDirectUploadStorage;
+  upload: UploadSession;
+  job: ProjectJob;
+  workspace: ProjectWorkspace;
+  sourcePath: string;
+  jobs: JobStore;
+  runJobs: boolean;
+  projectJobRunner: (input: RunProjectJobInput) => Promise<void>;
+  cutPresetId?: RunProjectJobInput["cutPresetId"];
+}) {
+  void Promise.resolve().then(async () => {
+    jobs.update(job.id, {
+      status: "running",
+      stage: "upload",
+      message: "Recebendo video do R2"
+    });
+    console.info(`[flowcut] direct upload ${upload.id}: downloading ${upload.sizeBytes} bytes from R2`);
+    await directUploadStorage.downloadObjectToFile({
+      storageKey: upload.storageKey,
+      outputPath: sourcePath
+    });
+    console.info(`[flowcut] direct upload ${upload.id}: stored source file at ${sourcePath}`);
+
+    if (directUploadStorage.deleteObject) {
+      await Promise.resolve(directUploadStorage.deleteObject(upload.storageKey)).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        console.warn(`[flowcut] direct upload ${upload.id}: failed to delete temporary R2 object: ${message}`);
+      });
+    }
+
+    if (!runJobs) {
+      jobs.update(job.id, {
+        status: "queued",
+        stage: "queued",
+        message: "Waiting to start"
+      });
+      return;
+    }
+
+    await projectJobRunner({
+      jobId: job.id,
+      workspace,
+      sourcePath,
+      jobs,
+      cutPresetId
+    });
+  }).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jobs.update(job.id, {
+      status: "failed",
+      stage: "failed",
+      message: `Project job failed: ${message}`,
+      error: message
+    });
+  });
 }
 
 function serializeUpload(upload: UploadSession) {
