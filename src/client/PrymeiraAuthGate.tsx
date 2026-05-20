@@ -7,6 +7,7 @@ import {
   SignedOut,
   useAuth
 } from "@clerk/clerk-react";
+import { ptBR } from "@clerk/localizations";
 import { configureApiAuth } from "./api";
 
 // ── Timeline clip decoration — film/edit motif ───────────────────────────────
@@ -497,7 +498,7 @@ export function PrymeiraAuthGate({
   }
 
   return (
-    <ClerkProvider publishableKey={publishableKey}>
+    <ClerkProvider publishableKey={publishableKey} localization={ptBR}>
       {/* Login page — shown only when signed out */}
       <SignedOut>
         <FlowcutLoginLayout />
