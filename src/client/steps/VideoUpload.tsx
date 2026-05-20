@@ -6,6 +6,7 @@ import { StatusBadge } from "../components/StatusBadge";
 
 type VideoUploadProps = {
   fileLimitBytes: number | undefined;
+  isApiReady: boolean;
   isFileTooLarge: boolean;
   error: string | null;
   projects: ProjectLibraryItem[];
@@ -17,6 +18,7 @@ type VideoUploadProps = {
 
 export function VideoUpload({
   fileLimitBytes,
+  isApiReady,
   isFileTooLarge,
   error,
   projects,
@@ -50,12 +52,14 @@ export function VideoUpload({
         padding: "40px 32px",
         textAlign: "center",
         background: "var(--shell-surface)",
-        cursor: "pointer",
+        cursor: isApiReady ? "pointer" : "not-allowed",
+        opacity: isApiReady ? 1 : 0.6,
         marginBottom: 16
       }}>
         <input
           type="file"
           accept={VIDEO_FILE_INPUT_ACCEPT}
+          disabled={!isApiReady}
           style={{ display: "none" }}
           onChange={(e) => onFileSelected(e.currentTarget.files?.[0] ?? null)}
         />
@@ -71,6 +75,7 @@ export function VideoUpload({
         {file && !isUploading && (
           <button
             type="button"
+            disabled={!isApiReady}
             onClick={(e) => { e.preventDefault(); onStartUpload(); }}
             style={{
               display: "inline-block", marginTop: 16,
@@ -78,7 +83,7 @@ export function VideoUpload({
               fontSize: 11, fontWeight: 800,
               padding: "9px 20px", borderRadius: 8,
               textTransform: "uppercase", letterSpacing: "0.5px",
-              border: "none", cursor: "pointer"
+              border: "none", cursor: isApiReady ? "pointer" : "not-allowed"
             }}
           >
             Enviar vídeo
@@ -92,13 +97,13 @@ export function VideoUpload({
       </label>
 
       {/* Error */}
-      {(error || isFileTooLarge) && (
+      {(!isApiReady || error || isFileTooLarge) && (
         <div style={{
           padding: "10px 14px", borderRadius: 8,
           background: "rgba(159,77,72,0.1)", border: "1px solid rgba(159,77,72,0.25)",
           color: "var(--danger)", fontSize: 12, marginBottom: 14
         }}>
-          {isFileTooLarge ? "Arquivo acima do limite configurado." : error}
+          {!isApiReady ? "API do Flowcut indisponivel. Aguarde o backend subir e recarregue." : isFileTooLarge ? "Arquivo acima do limite configurado." : error}
         </div>
       )}
 

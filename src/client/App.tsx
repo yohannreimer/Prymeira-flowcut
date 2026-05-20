@@ -402,6 +402,10 @@ export function App() {
 
   async function startUpload() {
     if (!file) return;
+    if (!uploadConfig) {
+      setError("API do Flowcut indisponivel. Aguarde o backend subir e recarregue a pagina.");
+      return;
+    }
     setError(null);
     setIsUploading(true);
     setUploadStartedAt(Date.now());
@@ -911,6 +915,7 @@ export function App() {
   }
 
   const fileLimitBytes = uploadConfig?.uploadFileSizeLimitBytes;
+  const isApiReady = Boolean(uploadConfig);
   const isFileTooLarge = file && fileLimitBytes !== undefined && file.size > fileLimitBytes;
   const selectedCut = selectedCutId ? knownCuts.find((cut) => cut.id === selectedCutId) ?? null : null;
   const activeCaption = editPlan ? getActiveCaption(editPlan.captions, videoTimeSec) : null;
@@ -969,6 +974,7 @@ export function App() {
         isGeneratingYoutubePackage={isGeneratingYoutubePackage}
         youtubePackageJob={youtubePackageJob}
         uploadConfig={uploadConfig}
+        isApiReady={isApiReady}
         isFileTooLarge={Boolean(isFileTooLarge)}
         error={error}
         projects={projects}

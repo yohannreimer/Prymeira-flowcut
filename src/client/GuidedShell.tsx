@@ -113,6 +113,7 @@ export type GuidedShellProps = {
   isGeneratingYoutubePackage: boolean;
   youtubePackageJob: ProjectJob | null;
   uploadConfig: UploadConfig | null;
+  isApiReady: boolean;
   isFileTooLarge: boolean;
   error: string | null;
   projects: ProjectLibraryItem[];
@@ -136,7 +137,7 @@ export function GuidedShell({
   selectedGeneratedThumbnailName, isExporting, isPublishingYoutube, youtubePublicationUrl, exportJob,
   isUploading, isCaptioning, captionJob,
   isGeneratingYoutubePackage, youtubePackageJob,
-  uploadConfig, isFileTooLarge, error, projects,
+  uploadConfig, isApiReady, isFileTooLarge, error, projects,
   publicationTitle, publicationDescription, publicationVisibility,
   onFileSelected, onStartUpload, onGenerateCaptions,
   onGenerateYoutubePackage, onSelectGeneratedThumbnail,
@@ -185,7 +186,7 @@ export function GuidedShell({
 
   // Footer CTA: triggers actions on steps 1 and 5; steps 2–4 use in-content CTAs
   const footerConfig: Record<number, { label: string; disabled: boolean; action: () => void }> = {
-    1: { label: "Enviar vídeo", disabled: !file || isUploading, action: onStartUpload },
+    1: { label: isApiReady ? "Enviar vídeo" : "API indisponível", disabled: !file || isUploading || !isApiReady, action: onStartUpload },
     2: {
       label: (isCutRunning || isUploading) ? "Processando…" : hasCut ? "Corte pronto" : "Aguardando corte",
       disabled: true,
@@ -248,6 +249,7 @@ export function GuidedShell({
       {currentStep === 1 && (
         <VideoUpload
           fileLimitBytes={uploadConfig?.uploadFileSizeLimitBytes}
+          isApiReady={isApiReady}
           isFileTooLarge={isFileTooLarge}
           error={error}
           projects={projects}
