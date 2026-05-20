@@ -33,14 +33,16 @@ npm install
 PRYMEIRA_ACCOUNT_API_URL=http://localhost:3001 \
 PRYMEIRA_PRODUCT_KEY=media \
 VITE_CLERK_PUBLISHABLE_KEY=pk_test_replace_me \
+VITE_PRYMEIRA_HUB_URL=http://localhost:5175 \
 npm run dev
 ```
 
 `PRYMEIRA_PRODUCT_KEY` defaults to `media`, but setting it explicitly keeps local Hub and API configuration easy to audit.
+When the backend denies access, the client redirects to `${VITE_PRYMEIRA_HUB_URL}/acesso-negado`.
 
 ## 4. Grant Local Product Access
 
-Grant the Clerk user access to the Media product from Prymeira Account:
+Grant the Clerk user access to Flowcut from Prymeira Account:
 
 ```bash
 cd "../Prymeira Account"
@@ -49,7 +51,7 @@ pnpm --filter @prymeira/account-api exec tsx src/scripts/grant-product-access.ts
 
 ## 5. Tenant Storage
 
-When Prymeira auth is enabled, Media stores project data under the authorized workspace:
+When Prymeira auth is enabled, Flowcut stores project data under the authorized workspace:
 
 ```text
 workspace/workspaces/<workspace_id>/projects/<project_id>

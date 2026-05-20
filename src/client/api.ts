@@ -12,6 +12,7 @@ import type { ExportSettings } from "../shared/export-settings";
 import type { CaptionStyleId } from "../shared/caption-styles";
 import type { ManualCut } from "../shared/manual-edits";
 import type { ProjectLibraryItem } from "../shared/project-library";
+import { getBrowserPrymeiraHubUrl } from "./runtime-config";
 
 export type ProjectJob = {
   id: string;
@@ -91,6 +92,7 @@ type UploadVideoOptions = {
 type ApiAuthTokenProvider = (() => Promise<string | null> | string | null) | null;
 
 let authTokenProvider: ApiAuthTokenProvider = null;
+let redirectedForProductAccess = false;
 
 export function configureApiAuth(provider: ApiAuthTokenProvider): void {
   authTokenProvider = provider;
@@ -380,7 +382,8 @@ async function readErrorMessage(response: Response) {
     if (body?.error && typeof body.error === "object") {
       const error = body.error as { code?: unknown; message?: unknown };
       if (error.code === "product_access_denied") {
-        return "Seu usuário não tem acesso ao Flowcut neste workspace.";
+        redirectToPrymeiraAccessPage("product_access_denied");
+        return "Redirecionando para o Hub Prymeira...";
       }
       if (error.code === "missing_auth_token") {
         return "Faça login novamente para acessar o Flowcut.";
@@ -390,4 +393,17 @@ async function readErrorMessage(response: Response) {
     return `Falha na API (${response.status})`;
   }
   return response.text();
+}
+
+function redirectToPrymeiraAccessPage(reason: string): void {
+  if (redirectedForProductAccess || typeof window === "undefined") return;
+  redirectedForProductAccess = true;
+
+  const params = new URLSearchParams({
+    product_key: "media",
+    reason,
+    return_url: window.location.href
+  });
+
+  window.location.assign(`${getBrowserPrymeiraHubUrl()}/acesso-negado?${params.toString()}`);
 }

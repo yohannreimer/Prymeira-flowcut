@@ -54,6 +54,7 @@ services:
     environment:
       VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
       CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
+      VITE_PRYMEIRA_HUB_URL: ${VITE_PRYMEIRA_HUB_URL:-https://hub.prymeiradigital.com.br}
     networks:
       - network_swarm_public
       - flowcut_internal

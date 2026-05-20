@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { getClerkPublishableKey } from "./runtime-config";
+import { getClerkPublishableKey, getPrymeiraHubUrl } from "./runtime-config";
 
 describe("runtime config", () => {
   it("prefers the runtime Clerk publishable key over the Vite build-time key", () => {
@@ -33,5 +33,11 @@ describe("runtime config", () => {
     new Function("window", configSource)(window);
 
     expect(window.__PRYMEIRA_CONFIG__).toEqual({});
+  });
+
+  it("reads the Prymeira Hub URL from runtime config", () => {
+    expect(getPrymeiraHubUrl({
+      runtimeConfig: { VITE_PRYMEIRA_HUB_URL: "https://hub.prymeiradigital.com.br/" }
+    })).toBe("https://hub.prymeiradigital.com.br");
   });
 });
