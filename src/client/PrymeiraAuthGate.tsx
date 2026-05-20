@@ -357,6 +357,49 @@ function FlowcutLoginLayout() {
       </div>
 
       {/* ── Right: Clerk auth panel ── */}
+      <style>{`
+        .fc-clerk-root .cl-card,
+        .fc-clerk-root .cl-card * {
+          background: transparent !important;
+          box-shadow: none !important;
+          border: none !important;
+        }
+        .fc-clerk-root .cl-formFieldInput {
+          background: #1a1a18 !important;
+          border: 1px solid #2a2a28 !important;
+          color: #f6f2e8 !important;
+          border-radius: 10px !important;
+        }
+        .fc-clerk-root .cl-formFieldInput:focus {
+          border-color: #fcc009 !important;
+          box-shadow: 0 0 0 2px rgba(252,192,9,0.15) !important;
+        }
+        .fc-clerk-root .cl-formButtonPrimary {
+          background: #fcc009 !important;
+          color: #171716 !important;
+          font-weight: 700 !important;
+          box-shadow: 0 4px 16px rgba(252,192,9,0.22) !important;
+        }
+        .fc-clerk-root .cl-formButtonPrimary:hover {
+          background: #e8b008 !important;
+        }
+        .fc-clerk-root .cl-socialButtonsBlockButton {
+          background: #1a1a18 !important;
+          border: 1px solid #2a2a28 !important;
+          color: #f6f2e8 !important;
+          border-radius: 10px !important;
+        }
+        .fc-clerk-root .cl-socialButtonsBlockButton:hover {
+          background: #252523 !important;
+          border-color: #3a3a38 !important;
+        }
+        .fc-clerk-root .cl-dividerLine { background: #252523 !important; }
+        .fc-clerk-root .cl-dividerText { color: #5a5652 !important; }
+        .fc-clerk-root .cl-footerActionLink { color: #fcc009 !important; }
+        .fc-clerk-root .cl-footer,
+        .fc-clerk-root .cl-footerAction,
+        .fc-clerk-root .cl-internal-b3fm6y { background: transparent !important; }
+      `}</style>
       <div
         style={{
           flex: 1,
@@ -365,28 +408,29 @@ function FlowcutLoginLayout() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          padding: "48px 40px",
+          padding: "60px 52px",
           borderLeft: "1px solid rgba(246,242,232,0.05)",
         }}
       >
         <div
+          className="fc-clerk-root"
           style={{
             width: "100%",
-            maxWidth: 400,
+            maxWidth: 420,
             opacity: mounted ? 1 : 0,
             transform: mounted ? "translateY(0)" : "translateY(16px)",
             transition: "opacity 0.6s ease 0.18s, transform 0.6s ease 0.18s",
           }}
         >
           <ClerkLoading>
-            <div style={{ display: "grid", gap: 11, padding: "24px 0" }}>
+            <div style={{ display: "grid", gap: 14, padding: "24px 0" }}>
               {[100, 78, 100, 100, 52].map((w, i) => (
                 <div
                   key={i}
                   style={{
-                    height: i === 4 ? 44 : 14,
+                    height: i === 4 ? 46 : 14,
                     width: `${w}%`,
-                    borderRadius: 7,
+                    borderRadius: 8,
                     background: "#1a1a18",
                     opacity: 0.55,
                   }}
@@ -419,6 +463,8 @@ function FlowcutLoginLayout() {
                     border: "none",
                     padding: 0,
                   },
+                  footer: { background: "transparent" },
+                  footerAction: { background: "transparent" },
                 },
               }}
             />
