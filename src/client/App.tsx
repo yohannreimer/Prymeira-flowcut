@@ -45,6 +45,7 @@ import { getNextSelectedSectionId, getSelectedSection, replaceSection } from "./
 import { compareManualDurations, dragCutEdge, getZoomWindow, timeToWindowPercent } from "./timeline-model";
 import { composeYoutubeDescription, getGeneratedThumbnailAssets, getInitialSelectedThumbnailName } from "./youtube-package-ui";
 import { GuidedShell } from "./GuidedShell";
+import { buildYoutubeOAuthReturnTo, getPreferredFlowcutStepFromSearch } from "./oauth-return";
 
 type TimelineSnapshot = {
   cuts: ManualCut[];
@@ -782,7 +783,12 @@ export function App() {
   async function onConnectYoutube() {
     setError(null);
     try {
-      const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      const returnTo = buildYoutubeOAuthReturnTo({
+        pathname: window.location.pathname,
+        search: window.location.search,
+        hash: window.location.hash,
+        projectId: job?.projectId ?? editPlan?.projectId ?? exportJob?.projectId ?? null
+      });
       const { authorizationUrl } = await startYoutubeOAuth(returnTo);
       window.location.assign(authorizationUrl);
     } catch (err) {
@@ -998,6 +1004,7 @@ export function App() {
   const hasEditorSurface = Boolean(editPlan || job?.outputUrl);
   const visibleWorkspaceTabs = getVisibleWorkspaceTabs(hasEditorSurface);
   const showProjectProcessing = Boolean(job && (!hasEditorSurface || isActiveJob(job) || job.status === "failed"));
+  const preferredStep = getPreferredFlowcutStepFromSearch(window.location.search);
 
   function onSectionFilterChange(filter: TimelineSectionType | "all") {
     setSectionFilter(filter);
@@ -1048,6 +1055,7 @@ export function App() {
         publicationTitle={publicationTitle}
         publicationDescription={publicationDescription}
         publicationVisibility={publicationVisibility}
+        preferredStep={preferredStep}
         onFileSelected={resetForSelectedFile}
         onStartUpload={() => void startUpload()}
         onGenerateCaptions={() => void onGenerateCaptions()}

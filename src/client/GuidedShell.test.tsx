@@ -46,6 +46,11 @@ describe("deriveCurrentStep", () => {
     const mockJob = { id: "job1", projectId: "proj1", status: "queued" } as unknown as ProjectJob;
     expect(deriveCurrentStep(null, mockJob, false, true, true, false)).toBe(4);
   });
+
+  it("honors a preferred publish step after an OAuth callback restores a project", () => {
+    const mockJob = { id: "job1", projectId: "project_123", status: "passed" } as unknown as ProjectJob;
+    expect(deriveCurrentStep(null, mockJob, false, true, false, false, 5)).toBe(5);
+  });
 });
 
 describe("buildSidebarSteps", () => {

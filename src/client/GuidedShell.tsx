@@ -11,6 +11,7 @@ import { AiCut } from "./steps/AiCut";
 import { Transcription } from "./steps/Transcription";
 import { YouTubePackage } from "./steps/YouTubePackage";
 import { Publish } from "./steps/Publish";
+import type { FlowcutStep } from "./oauth-return";
 
 function isActiveJob(job: ProjectJob | null): boolean {
   return job !== null && ["queued", "running"].includes(job.status);
@@ -24,9 +25,11 @@ export function deriveCurrentStep(
   isUploading: boolean,
   hasCut: boolean,
   hasCaptions: boolean,
-  hasPackage: boolean
+  hasPackage: boolean,
+  preferredStep: FlowcutStep | null = null
 ): 1 | 2 | 3 | 4 | 5 {
   if (!job && !isUploading) return 1;
+  if (preferredStep) return preferredStep;
   if (!hasCut) return 2;
   if (!hasCaptions) return 3;
   if (!hasPackage) return 4;
@@ -124,6 +127,7 @@ export type GuidedShellProps = {
   publicationTitle: string;
   publicationDescription: string;
   publicationVisibility: "private" | "unlisted" | "public";
+  preferredStep?: FlowcutStep | null;
   onFileSelected: (file: File | null) => void;
   onStartUpload: () => void;
   onGenerateCaptions: () => void;
@@ -145,6 +149,7 @@ export function GuidedShell({
   isGeneratingYoutubePackage, youtubePackageJob,
   uploadConfig, isApiReady, isFileTooLarge, error, projects,
   publicationTitle, publicationDescription, publicationVisibility,
+  preferredStep = null,
   onFileSelected, onStartUpload, onGenerateCaptions,
   onGenerateYoutubePackage, onSelectGeneratedThumbnail,
   onPublicationTitleChange, onPublicationDescriptionChange,
@@ -176,9 +181,9 @@ export function GuidedShell({
   useEffect(() => {
     if (!initialSyncDone.current && (job || hasCut || hasCaptions || hasPackage)) {
       initialSyncDone.current = true;
-      setViewStep(deriveCurrentStep(file, job, isUploading, hasCut, hasCaptions, hasPackage));
+      setViewStep(deriveCurrentStep(file, job, isUploading, hasCut, hasCaptions, hasPackage, preferredStep));
     }
-  }, [job, hasCut, hasCaptions, hasPackage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [job, hasCut, hasCaptions, hasPackage, preferredStep]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-advance when pipeline starts processing (not on completion)
   useEffect(() => {
