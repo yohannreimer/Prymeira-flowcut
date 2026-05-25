@@ -42,6 +42,7 @@ import { touchProjectActivity } from "../project-retention";
 import { assessPublishReadiness } from "../qa/publish-readiness";
 import { resolveYouTubeOAuthCredentials } from "../youtube/oauth-credentials";
 import { isYoutubePackageAssetName, readYoutubePackageSummary } from "../youtube/youtube-package-summary";
+import { createZipArchive, createZipFileEntry, type ZipEntryInput } from "../zip/simple-zip";
 
 const DEFAULT_UPLOAD_FILE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024 * 1024;
 const NORMAL_EXTENSION_PATTERN = /^\.[A-Za-z0-9]{1,10}$/;
@@ -64,6 +65,11 @@ const youtubePublishRequestSchema = z.object({
   privacyStatus: z.enum(["private", "unlisted", "public"]).default("private"),
   thumbnailName: z.string().nullable().optional()
 }).strict();
+const finalPackageRequestSchema = z.object({
+  title: z.string().trim().max(100).optional(),
+  description: z.string().max(5000).optional(),
+  thumbnailName: z.string().nullable().optional()
+}).strict().default({});
 const sectionMotionTreatmentPatchSchema = z.object({
   enabled: z.boolean().optional(),
   slots: z.array(sectionMotionSlotSchema).optional()
@@ -716,6 +722,59 @@ export function createProjectRouter(options: ProjectRouteOptions) {
     }
   });
 
+  router.post("/:projectId/final-package", async (req, res, next) => {
+    try {
+      const { projectId } = req.params;
+      if (!PROJECT_ID_PATTERN.test(projectId)) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      const bodyResult = finalPackageRequestSchema.safeParse(req.body ?? {});
+      if (!bodyResult.success) {
+        res.status(400).json({ error: "Invalid final package payload" });
+        return;
+      }
+
+      const context = getRouteContext(res);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
+      const videoPath = await findLatestFinalExport(workspace.renders);
+      if (!videoPath) {
+        res.status(409).json({ error: "Gere o export final antes de baixar o pacote." });
+        return;
+      }
+
+      const thumbnailPath = await resolveYoutubeThumbnailPath({
+        projectRoot: workspace.root,
+        projectId,
+        thumbnailName: bodyResult.data.thumbnailName ?? null
+      });
+      if (thumbnailPath === "invalid") {
+        res.status(400).json({ error: "Thumbnail selecionada nao encontrada no pacote YouTube." });
+        return;
+      }
+
+      const zip = await createZipArchive(await buildFinalPackageEntries({
+        projectRoot: workspace.root,
+        projectId,
+        videoPath,
+        thumbnailPath,
+        thumbnailName: bodyResult.data.thumbnailName ?? null,
+        title: bodyResult.data.title,
+        description: bodyResult.data.description
+      }));
+      await touchProjectActivity(workspace.root).catch(() => undefined);
+      res.setHeader("content-type", "application/zip");
+      res.setHeader("content-disposition", `attachment; filename="${projectId}-flowcut-final-package.zip"`);
+      res.send(zip);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      handleTenantError(error, res, next);
+    }
+  });
+
   router.post("/:projectId/youtube-publish", async (req, res, next) => {
     try {
       const { projectId } = req.params;
@@ -1116,6 +1175,61 @@ async function findLatestFinalExport(rendersPath: string): Promise<string | null
 
   candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
   return candidates[0]?.filePath ?? null;
+}
+
+async function buildFinalPackageEntries({
+  projectRoot,
+  projectId,
+  videoPath,
+  thumbnailPath,
+  thumbnailName,
+  title,
+  description
+}: {
+  projectRoot: string;
+  projectId: string;
+  videoPath: string;
+  thumbnailPath: string | null;
+  thumbnailName: string | null;
+  title?: string;
+  description?: string;
+}): Promise<ZipEntryInput[]> {
+  const summary = await readYoutubePackageSummary(projectRoot, projectId).catch(() => null);
+  const fallbackTitle = await readOptionalYoutubePackageText(projectRoot, "title.txt");
+  const fallbackDescription = await readOptionalYoutubePackageText(projectRoot, "description.txt");
+  const packageTitle = title?.trim() || summary?.title || fallbackTitle || "";
+  const packageDescription = await composePublishedYouTubeDescription(
+    projectRoot,
+    description ?? summary?.description ?? fallbackDescription ?? ""
+  );
+  const tags = await readYouTubePackageTags(projectRoot);
+  const chapters = await readOptionalYoutubePackageText(projectRoot, "chapters.txt");
+  const videoEntryName = `video/${path.basename(videoPath)}`;
+  const thumbnailEntryName = thumbnailPath && thumbnailName ? `thumbnail/${thumbnailName}` : null;
+  const entries: ZipEntryInput[] = [
+    await createZipFileEntry(videoEntryName, videoPath),
+    { name: "youtube/title.txt", data: `${packageTitle}\n` },
+    { name: "youtube/description.txt", data: `${packageDescription}\n` },
+    { name: "youtube/tags.txt", data: tags.length ? `${tags.join("\n")}\n` : "" },
+    {
+      name: "metadata/flowcut-package.json",
+      data: `${JSON.stringify({
+        projectId,
+        videoFile: videoEntryName,
+        thumbnailFile: thumbnailEntryName,
+        exportedAt: new Date().toISOString()
+      }, null, 2)}\n`
+    }
+  ];
+
+  if (chapters) {
+    entries.push({ name: "youtube/chapters.txt", data: `${chapters}\n` });
+  }
+  if (thumbnailPath && thumbnailName) {
+    entries.push(await createZipFileEntry(`thumbnail/${thumbnailName}`, thumbnailPath));
+  }
+
+  return entries;
 }
 
 async function resolveYoutubeThumbnailPath({

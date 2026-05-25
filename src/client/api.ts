@@ -331,6 +331,23 @@ export async function publishYoutubeVideo(
   return data.publication;
 }
 
+export async function downloadFinalPackage(
+  projectId: string,
+  input: {
+    title?: string;
+    description?: string;
+    thumbnailName?: string | null;
+  }
+): Promise<Blob> {
+  const response = await request(`/api/projects/${encodeURIComponent(projectId)}/final-package`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new Error(await readErrorMessage(response));
+  return response.blob();
+}
+
 export async function startYoutubeOAuth(returnTo: string): Promise<{ authorizationUrl: string }> {
   const response = await request("/api/youtube/oauth/start", {
     method: "POST",

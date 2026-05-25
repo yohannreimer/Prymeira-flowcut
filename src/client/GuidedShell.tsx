@@ -107,6 +107,7 @@ export type GuidedShellProps = {
   youtubePackageSummary: YoutubePackageSummary | null;
   selectedGeneratedThumbnailName: string | null;
   isExporting: boolean;
+  isDownloadingFinalPackage: boolean;
   isPublishingYoutube: boolean;
   youtubePublicationUrl: string | null;
   exportJob: ProjectJob | null;
@@ -132,13 +133,14 @@ export type GuidedShellProps = {
   onPublicationDescriptionChange: (desc: string) => void;
   onPublicationVisibilityChange: (v: "private" | "unlisted" | "public") => void;
   onStartFinalExport: () => void;
+  onDownloadFinalPackage: () => void;
   onPublishYoutube: () => void;
   onConnectYoutube: () => void;
 };
 
 export function GuidedShell({
   file, job, editPlan, youtubePackageSummary,
-  selectedGeneratedThumbnailName, isExporting, isPublishingYoutube, youtubePublicationUrl, exportJob,
+  selectedGeneratedThumbnailName, isExporting, isDownloadingFinalPackage, isPublishingYoutube, youtubePublicationUrl, exportJob,
   isUploading, isCaptioning, captionJob,
   isGeneratingYoutubePackage, youtubePackageJob,
   uploadConfig, isApiReady, isFileTooLarge, error, projects,
@@ -146,7 +148,7 @@ export function GuidedShell({
   onFileSelected, onStartUpload, onGenerateCaptions,
   onGenerateYoutubePackage, onSelectGeneratedThumbnail,
   onPublicationTitleChange, onPublicationDescriptionChange,
-  onPublicationVisibilityChange, onStartFinalExport, onPublishYoutube, onConnectYoutube
+  onPublicationVisibilityChange, onStartFinalExport, onDownloadFinalPackage, onPublishYoutube, onConnectYoutube
 }: GuidedShellProps) {
   const hasCut = Boolean(job?.outputUrl);
   const hasCaptions = Boolean(editPlan?.captions.length);
@@ -314,12 +316,14 @@ export function GuidedShell({
           editPlan={editPlan}
           exportJob={exportJob}
           isExporting={isExporting}
+          isDownloadingFinalPackage={isDownloadingFinalPackage}
           isPublishingYoutube={isPublishingYoutube}
           youtubePublicationUrl={youtubePublicationUrl}
           publicationVisibility={publicationVisibility}
           error={error}
           onPublicationVisibilityChange={onPublicationVisibilityChange}
           onStartFinalExport={onStartFinalExport}
+          onDownloadFinalPackage={onDownloadFinalPackage}
           onPublishYoutube={onPublishYoutube}
           onConnectYoutube={onConnectYoutube}
         />

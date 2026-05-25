@@ -1,4 +1,4 @@
-import { AlertTriangle, Calendar, Check, FileText, PlayCircle, Upload } from "lucide-react";
+import { AlertTriangle, Calendar, Check, Download, PlayCircle, Upload } from "lucide-react";
 import type { EditPlanSummary, ProjectJob, YoutubePackageSummary } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
 
@@ -7,12 +7,14 @@ type PublishProps = {
   editPlan: EditPlanSummary | null;
   exportJob: ProjectJob | null;
   isExporting: boolean;
+  isDownloadingFinalPackage: boolean;
   isPublishingYoutube: boolean;
   youtubePublicationUrl: string | null;
   publicationVisibility: "private" | "unlisted" | "public";
   error?: string | null;
   onPublicationVisibilityChange: (v: "private" | "unlisted" | "public") => void;
   onStartFinalExport: () => void;
+  onDownloadFinalPackage: () => void;
   onPublishYoutube: () => void;
   onConnectYoutube: () => void;
 };
@@ -34,12 +36,14 @@ export function Publish({
   editPlan,
   exportJob,
   isExporting,
+  isDownloadingFinalPackage,
   isPublishingYoutube,
   youtubePublicationUrl,
   publicationVisibility,
   error,
   onPublicationVisibilityChange,
   onStartFinalExport,
+  onDownloadFinalPackage,
   onPublishYoutube,
   onConnectYoutube
 }: PublishProps) {
@@ -125,13 +129,13 @@ export function Publish({
         }}>
           <Calendar size={11} /> Agendar
         </button>
-        <button type="button" disabled style={{
+        <button type="button" onClick={onDownloadFinalPackage} disabled={!hasExport || isDownloadingFinalPackage} style={{
           flex: 1, padding: "8px",
           background: "var(--shell-surface)", border: "1px solid var(--shell-border-soft)",
-          borderRadius: 7, fontSize: 10, color: "#444", cursor: "not-allowed",
+          borderRadius: 7, fontSize: 10, color: hasExport ? "#a9a39a" : "#444", cursor: hasExport ? "pointer" : "not-allowed",
           display: "flex", alignItems: "center", justifyContent: "center", gap: 4
         }}>
-          <FileText size={11} /> Rascunho
+          <Download size={11} /> {isDownloadingFinalPackage ? "Baixando" : "Pacote final"}
         </button>
       </div>
 

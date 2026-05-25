@@ -1548,6 +1548,72 @@ describe("project routes", () => {
     });
   });
 
+  it("downloads a final package with video, selected thumbnail, and YouTube metadata", async () => {
+    await withTempDir("ai-editor-route-final-package-", async (dir) => {
+      const projectId = "project_123";
+      const projectRoot = path.join(dir, projectId);
+      const rendersRoot = path.join(projectRoot, "renders");
+      const packageRoot = path.join(projectRoot, "download", "youtube-package");
+      await mkdir(rendersRoot, { recursive: true });
+      await mkdir(packageRoot, { recursive: true });
+      await writeFile(path.join(rendersRoot, "youtube-edit.mp4"), Buffer.from("final export"));
+      await writeFile(path.join(packageRoot, "title.txt"), "Titulo gerado");
+      await writeFile(path.join(packageRoot, "description.txt"), "Descricao gerada");
+      await writeFile(path.join(packageRoot, "chapters.txt"), "00:00 Inicio");
+      await writeFile(path.join(packageRoot, "tags.txt"), "PROCESSO\nREAL");
+      await writeFile(path.join(packageRoot, "thumbnail-generated-01.png"), Buffer.from("thumbnail"));
+      await writeFile(path.join(projectRoot, "edit-plan.json"), JSON.stringify({
+        id: "plan_project_123",
+        projectId,
+        version: 1,
+        source: {
+          path: "/tmp/source.mov",
+          durationSec: 10,
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          hasAudio: true
+        },
+        segments: [],
+        removed: [],
+        sections: [],
+        captions: [],
+        captionSettings: { enabled: false },
+        overlays: [],
+        color: { presetId: "neutral", label: "Neutral" },
+        audio: { music: null, voiceTargetLufs: -16 },
+        qa: { status: "passed", warnings: [] },
+        createdAt: "2026-05-05T00:00:00.000Z"
+      }));
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
+
+      const response = await request(app)
+        .post(`/api/projects/${projectId}/final-package`)
+        .buffer(true)
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => callback(null, Buffer.concat(chunks)));
+        })
+        .send({
+          title: "Titulo editado",
+          description: "Descricao editada",
+          thumbnailName: "thumbnail-generated-01.png"
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.headers["content-type"]).toContain("application/zip");
+      expect(response.headers["content-disposition"]).toContain("project_123-flowcut-final-package.zip");
+      const zipText = response.body.toString("utf8");
+      expect(zipText).toContain("video/youtube-edit.mp4");
+      expect(zipText).toContain("thumbnail/thumbnail-generated-01.png");
+      expect(zipText).toContain("youtube/title.txt");
+      expect(zipText).toContain("Titulo editado");
+      expect(zipText).toContain("Descricao editada");
+      expect(zipText).toContain("00:00 Inicio");
+    });
+  });
+
   it("does not return a media URL for output outside the renders directory", async () => {
     await withTempDir("ai-editor-route-", async (dir) => {
       const jobs = createJobStore();

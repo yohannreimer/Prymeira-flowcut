@@ -20,6 +20,7 @@ import {
   fetchYoutubePackageSummary,
   fetchUploadConfig,
   deleteProject,
+  downloadFinalPackage,
   formatBytes,
   generateAIMotion,
   generateCaptions,
@@ -114,6 +115,7 @@ export function App() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isDownloadingExport, setIsDownloadingExport] = useState(false);
+  const [isDownloadingFinalPackage, setIsDownloadingFinalPackage] = useState(false);
   const [isPlanningMotion, setIsPlanningMotion] = useState(false);
   const [isGeneratingYoutubePackage, setIsGeneratingYoutubePackage] = useState(false);
   const [isPublishingYoutube, setIsPublishingYoutube] = useState(false);
@@ -402,6 +404,7 @@ export function App() {
     setPublicationDescription("");
     setPublicationVisibility("private");
     setIsPublishingYoutube(false);
+    setIsDownloadingFinalPackage(false);
     setYoutubePublicationUrl(null);
     setIsGeneratingYoutubePackage(false);
     setCaptionSettings(DEFAULT_CAPTION_SETTINGS);
@@ -590,6 +593,7 @@ export function App() {
         setPublicationDescription("");
         setPublicationVisibility("private");
         setIsPublishingYoutube(false);
+        setIsDownloadingFinalPackage(false);
         setYoutubePublicationUrl(null);
         setIsExporting(false);
         setIsGeneratingYoutubePackage(false);
@@ -625,6 +629,7 @@ export function App() {
       setPublicationDescription("");
       setPublicationVisibility("private");
       setIsPublishingYoutube(false);
+      setIsDownloadingFinalPackage(false);
       setYoutubePublicationUrl(null);
       setIsExporting(false);
       setIsGeneratingYoutubePackage(false);
@@ -721,6 +726,28 @@ export function App() {
       setError(err instanceof Error ? err.message : "Falha ao baixar o MP4 final");
     } finally {
       setIsDownloadingExport(false);
+    }
+  }
+
+  async function onDownloadFinalPackage() {
+    if (!job) return;
+    if (!exportJob?.outputUrl) {
+      setError("Gere o export final antes de baixar o pacote.");
+      return;
+    }
+    setError(null);
+    setIsDownloadingFinalPackage(true);
+    try {
+      const blob = await downloadFinalPackage(job.projectId, {
+        title: publicationTitle,
+        description: publicationDescription,
+        thumbnailName: selectedGeneratedThumbnailName
+      });
+      downloadBlob(blob, `${job.projectId}-flowcut-final-package.zip`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao baixar pacote final");
+    } finally {
+      setIsDownloadingFinalPackage(false);
     }
   }
 
@@ -1004,6 +1031,7 @@ export function App() {
         youtubePackageSummary={youtubePackageSummary}
         selectedGeneratedThumbnailName={selectedGeneratedThumbnailName}
         isExporting={isExporting}
+        isDownloadingFinalPackage={isDownloadingFinalPackage}
         isPublishingYoutube={isPublishingYoutube}
         youtubePublicationUrl={youtubePublicationUrl}
         exportJob={exportJob}
@@ -1029,6 +1057,7 @@ export function App() {
         onPublicationDescriptionChange={setPublicationDescription}
         onPublicationVisibilityChange={setPublicationVisibility}
         onStartFinalExport={() => void onExport()}
+        onDownloadFinalPackage={() => void onDownloadFinalPackage()}
         onPublishYoutube={() => void onPublishYoutube()}
         onConnectYoutube={() => void onConnectYoutube()}
       />
@@ -3571,6 +3600,10 @@ async function downloadMediaFile(url: string, fileName: string) {
     throw new Error(`Falha ao baixar arquivo (${response.status})`);
   }
   const blob = await response.blob();
+  downloadBlob(blob, fileName);
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
   if (blob.size === 0) {
     throw new Error("O arquivo baixado veio vazio.");
   }

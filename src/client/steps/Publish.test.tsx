@@ -45,12 +45,14 @@ describe("Publish", () => {
         editPlan={null}
         exportJob={exportJob}
         isExporting={false}
+        isDownloadingFinalPackage={false}
         isPublishingYoutube={false}
         youtubePublicationUrl={null}
         publicationVisibility="private"
         error="Reconecte sua conta do YouTube."
         onPublicationVisibilityChange={vi.fn()}
         onStartFinalExport={vi.fn()}
+        onDownloadFinalPackage={vi.fn()}
         onPublishYoutube={vi.fn()}
         onConnectYoutube={vi.fn()}
       />
@@ -67,11 +69,13 @@ describe("Publish", () => {
         editPlan={null}
         exportJob={exportJob}
         isExporting={false}
+        isDownloadingFinalPackage={false}
         isPublishingYoutube={false}
         youtubePublicationUrl={null}
         publicationVisibility="private"
         onPublicationVisibilityChange={vi.fn()}
         onStartFinalExport={vi.fn()}
+        onDownloadFinalPackage={vi.fn()}
         onPublishYoutube={vi.fn()}
         onConnectYoutube={onConnectYoutube}
       />
@@ -80,5 +84,30 @@ describe("Publish", () => {
     fireEvent.click(screen.getByRole("button", { name: /conectar youtube/i }));
 
     expect(onConnectYoutube).toHaveBeenCalledTimes(1);
+  });
+
+  it("downloads the final package when an export exists", () => {
+    const onDownloadFinalPackage = vi.fn();
+    render(
+      <Publish
+        youtubePackageSummary={readySummary}
+        editPlan={null}
+        exportJob={exportJob}
+        isExporting={false}
+        isDownloadingFinalPackage={false}
+        isPublishingYoutube={false}
+        youtubePublicationUrl={null}
+        publicationVisibility="private"
+        onPublicationVisibilityChange={vi.fn()}
+        onStartFinalExport={vi.fn()}
+        onDownloadFinalPackage={onDownloadFinalPackage}
+        onPublishYoutube={vi.fn()}
+        onConnectYoutube={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /pacote final/i }));
+
+    expect(onDownloadFinalPackage).toHaveBeenCalledTimes(1);
   });
 });
