@@ -28,6 +28,7 @@ import {
   publishYoutubeVideo,
   rerenderProject,
   exportProject,
+  startYoutubeOAuth,
   type EditPlanSummary,
   type ProjectJob,
   type UploadConfig,
@@ -161,6 +162,15 @@ export function App() {
 
   useEffect(() => {
     void refreshProjects();
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("youtube") !== "connected") return;
+    setError(null);
+    params.delete("youtube");
+    const nextSearch = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`);
   }, []);
 
   useEffect(() => {
@@ -638,6 +648,23 @@ export function App() {
         createdAt: now,
         updatedAt: now
       });
+      if (project.finalExportUrl) {
+        setExportJob({
+          id: `restored_export_${plan.projectId}`,
+          projectId: plan.projectId,
+          status: "passed",
+          stage: "complete",
+          message: "Export is ready",
+          sourcePath: "",
+          outputPath: "",
+          outputUrl: project.finalExportUrl,
+          planPath: "",
+          warnings: [],
+          error: null,
+          createdAt: now,
+          updatedAt: now
+        });
+      }
       void refreshYoutubePackageSummary(project.id);
       setActiveWorkspaceTab("review");
       window.history.replaceState(null, "", `?projectId=${encodeURIComponent(project.id)}`);
@@ -722,6 +749,17 @@ export function App() {
       setError(err instanceof Error ? err.message : "Falha ao publicar no YouTube");
     } finally {
       setIsPublishingYoutube(false);
+    }
+  }
+
+  async function onConnectYoutube() {
+    setError(null);
+    try {
+      const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      const { authorizationUrl } = await startYoutubeOAuth(returnTo);
+      window.location.assign(authorizationUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao iniciar conexão com YouTube");
     }
   }
 
@@ -992,6 +1030,7 @@ export function App() {
         onPublicationVisibilityChange={setPublicationVisibility}
         onStartFinalExport={() => void onExport()}
         onPublishYoutube={() => void onPublishYoutube()}
+        onConnectYoutube={() => void onConnectYoutube()}
       />
 
       {isAdvancedEditorOpen ? (

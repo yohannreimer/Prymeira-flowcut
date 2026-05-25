@@ -36,10 +36,11 @@ import {
   createUploadSession,
   type UploadSession
 } from "../media-factory-saas/upload-sessions";
-import { getYouTubeCredentialsFromEnv, publishYouTubeVideo } from "../media-factory/youtube-publisher";
+import { publishYouTubeVideo } from "../media-factory/youtube-publisher";
 import { PrymeiraTenantError, getTenantProjectRoot, type PrymeiraTenantContext } from "../prymeira/tenant";
 import { touchProjectActivity } from "../project-retention";
 import { assessPublishReadiness } from "../qa/publish-readiness";
+import { resolveYouTubeOAuthCredentials } from "../youtube/oauth-credentials";
 import { isYoutubePackageAssetName, readYoutubePackageSummary } from "../youtube/youtube-package-summary";
 
 const DEFAULT_UPLOAD_FILE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024 * 1024;
@@ -729,10 +730,13 @@ export function createProjectRouter(options: ProjectRouteOptions) {
       }
 
       const context = getRouteContext(res);
-      const credentials = getYouTubeCredentialsFromEnv();
+      const credentials = await resolveYouTubeOAuthCredentials({
+        workspaceRoot: options.workspaceRoot,
+        workspaceId: context.tenant?.workspaceId ?? null
+      });
       if (!credentials) {
         res.status(400).json({
-          error: "Credenciais do YouTube ausentes. Configure YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET e YOUTUBE_REFRESH_TOKEN."
+          error: "Credenciais do YouTube ausentes. Conecte o YouTube ou configure YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET e YOUTUBE_REFRESH_TOKEN."
         });
         return;
       }

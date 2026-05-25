@@ -331,6 +331,16 @@ export async function publishYoutubeVideo(
   return data.publication;
 }
 
+export async function startYoutubeOAuth(returnTo: string): Promise<{ authorizationUrl: string }> {
+  const response = await request("/api/youtube/oauth/start", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ returnTo })
+  });
+  if (!response.ok) throw new Error(await readErrorMessage(response));
+  return response.json();
+}
+
 export function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];

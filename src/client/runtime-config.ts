@@ -62,3 +62,21 @@ export function getBrowserPrymeiraHubUrl(): string {
     }
   });
 }
+
+export function isLocalAuthBypassEnabled(input: {
+  viteEnv?: Record<string, string | boolean | undefined>;
+  hostname?: string;
+} = {}): boolean {
+  const isDev = input.viteEnv?.DEV === true || input.viteEnv?.MODE === "development";
+  if (!isDev) return false;
+
+  return input.hostname === "localhost" || input.hostname === "127.0.0.1";
+}
+
+export function isBrowserLocalAuthBypassEnabled(): boolean {
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | boolean | undefined> }).env;
+  return isLocalAuthBypassEnabled({
+    viteEnv: env,
+    hostname: globalThis.window?.location.hostname
+  });
+}

@@ -1,4 +1,4 @@
-import { AlertTriangle, Calendar, Check, FileText, Upload } from "lucide-react";
+import { AlertTriangle, Calendar, Check, FileText, PlayCircle, Upload } from "lucide-react";
 import type { EditPlanSummary, ProjectJob, YoutubePackageSummary } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
 
@@ -10,9 +10,11 @@ type PublishProps = {
   isPublishingYoutube: boolean;
   youtubePublicationUrl: string | null;
   publicationVisibility: "private" | "unlisted" | "public";
+  error?: string | null;
   onPublicationVisibilityChange: (v: "private" | "unlisted" | "public") => void;
   onStartFinalExport: () => void;
   onPublishYoutube: () => void;
+  onConnectYoutube: () => void;
 };
 
 const VISIBILITY_LABELS: Record<string, string> = {
@@ -35,9 +37,11 @@ export function Publish({
   isPublishingYoutube,
   youtubePublicationUrl,
   publicationVisibility,
+  error,
   onPublicationVisibilityChange,
   onStartFinalExport,
-  onPublishYoutube
+  onPublishYoutube,
+  onConnectYoutube
 }: PublishProps) {
   const hasPackage = youtubePackageSummary?.status === "ready";
   const hasCaptions = Boolean(editPlan?.captions.length);
@@ -131,7 +135,34 @@ export function Publish({
         </button>
       </div>
 
+      <button type="button" onClick={onConnectYoutube} style={{
+        width: "100%", padding: "9px",
+        background: "rgba(255,255,255,0.03)", border: "1px solid var(--shell-border-soft)",
+        borderRadius: 7, fontSize: 10, color: "#a9a39a", cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+        marginBottom: 10
+      }}>
+        <PlayCircle size={12} /> Conectar YouTube
+      </button>
+
       {/* Export + publish CTA */}
+      {error ? (
+        <div
+          role="alert"
+          style={{
+            padding: "10px 12px",
+            borderRadius: 7,
+            background: "rgba(159,77,72,0.1)",
+            border: "1px solid rgba(159,77,72,0.25)",
+            color: "var(--danger)",
+            fontSize: 11,
+            lineHeight: 1.45,
+            marginBottom: 10
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={hasExport ? onPublishYoutube : onStartFinalExport}

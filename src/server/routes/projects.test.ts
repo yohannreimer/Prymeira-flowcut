@@ -42,6 +42,7 @@ describe("project routes", () => {
       await mkdir(rendersRoot, { recursive: true });
       await writeFile(path.join(rendersRoot, "rough-cut.mp4"), Buffer.from("rendered"));
       await writeFile(path.join(rendersRoot, "captions.vtt"), "WEBVTT");
+      await writeFile(path.join(rendersRoot, "youtube-edit.mp4"), Buffer.from("final export"));
       await writeFile(path.join(projectRoot, "edit-plan.json"), JSON.stringify({
         id: "plan_project_123",
         projectId,
@@ -81,10 +82,12 @@ describe("project routes", () => {
         orientation: "vertical",
         status: "rendered",
         counts: { cuts: 1, captions: 1 },
-        outputUrl: "/media/project_123/rough-cut.mp4"
+        outputUrl: "/media/project_123/rough-cut.mp4",
+        finalExportUrl: "/media/project_123/youtube-edit.mp4"
       });
       expect(response.body.projects[0].versions).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: "rough_cut" }),
+        expect.objectContaining({ kind: "final_export" }),
         expect.objectContaining({ kind: "captions_file" }),
         expect.objectContaining({ kind: "music" }),
         expect.objectContaining({ kind: "captions_plan" })
@@ -330,7 +333,9 @@ describe("project routes", () => {
         outputPath: sourcePath,
         storageKey: created.body.upload.storageKey
       }));
-      expect(deleteObject).toHaveBeenCalledWith(created.body.upload.storageKey);
+      await vi.waitFor(() => {
+        expect(deleteObject).toHaveBeenCalledWith(created.body.upload.storageKey);
+      });
       expect(jobs.get(response.body.job.id)?.sourcePath).toBe(sourcePath);
     });
   });
@@ -1467,6 +1472,79 @@ describe("project routes", () => {
       expect(fetchMock.mock.calls[3][0].toString()).toBe(
         "https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=video-123"
       );
+    });
+  });
+
+  it("publishes YouTube videos with the refresh token saved for the tenant workspace", async () => {
+    await withTempDir("ai-editor-route-youtube-publish-tenant-token-", async (dir) => {
+      vi.stubEnv("YOUTUBE_CLIENT_ID", "client-id");
+      vi.stubEnv("YOUTUBE_CLIENT_SECRET", "client-secret");
+
+      const projectId = "project_123";
+      const workspaceRoot = path.join(dir, "workspaces", "workspace_abc");
+      const projectRoot = path.join(workspaceRoot, "projects", projectId);
+      const rendersRoot = path.join(projectRoot, "renders");
+      const packageRoot = path.join(projectRoot, "download", "youtube-package");
+      await mkdir(rendersRoot, { recursive: true });
+      await mkdir(packageRoot, { recursive: true });
+      await mkdir(path.join(workspaceRoot, "integrations"), { recursive: true });
+      await writeFile(path.join(workspaceRoot, "integrations", "youtube-oauth.json"), JSON.stringify({
+        refreshToken: "refresh-workspace"
+      }));
+      await writeFile(path.join(rendersRoot, "youtube-edit.mp4"), Buffer.from("final export"));
+      await writeFile(path.join(packageRoot, "title.txt"), "Titulo gerado");
+      await writeFile(path.join(packageRoot, "description.txt"), "Descricao gerada");
+      await writeFile(path.join(projectRoot, "edit-plan.json"), JSON.stringify({
+        id: "plan_project_123",
+        projectId,
+        version: 1,
+        source: {
+          path: "/tmp/source.mov",
+          durationSec: 10,
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          hasAudio: true
+        },
+        segments: [],
+        removed: [],
+        sections: [],
+        captions: [],
+        captionSettings: { enabled: false },
+        overlays: [],
+        color: { presetId: "neutral", label: "Neutral" },
+        audio: { music: null, voiceTargetLufs: -16 },
+        qa: { status: "passed", warnings: [] },
+        createdAt: "2026-05-05T00:00:00.000Z"
+      }));
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "access-123" }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, {
+          status: 200,
+          headers: { location: "https://upload.youtube.test/session" }
+        }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ id: "video-123" }), { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+      const app = createApp({
+        workspaceRoot: dir,
+        jobs: createJobStore(),
+        runJobs: false,
+        requireTenantAccess: tenantAccess("workspace_abc")
+      });
+
+      const response = await request(app)
+        .post(`/api/projects/${projectId}/youtube-publish`)
+        .set("Authorization", "Bearer clerk-token")
+        .send({
+          title: "Titulo editado",
+          description: "Descricao editada",
+          privacyStatus: "unlisted"
+        });
+
+      expect(response.status).toBe(200);
+      const refreshBody = fetchMock.mock.calls[0][1].body as URLSearchParams;
+      expect(refreshBody.get("refresh_token")).toBe("refresh-workspace");
     });
   });
 

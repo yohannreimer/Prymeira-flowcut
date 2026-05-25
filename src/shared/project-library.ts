@@ -4,7 +4,7 @@ import { editPlanSchema, type EditPlan } from "./edit-plan";
 
 export type ProjectOrientation = "vertical" | "horizontal" | "original";
 export type ProjectLibraryStatus = "missing_plan" | "invalid_plan" | "planned" | "captioned" | "music" | "rendered";
-export type ProjectVersionKind = "rough_cut" | "captions_file" | "music" | "captions_plan";
+export type ProjectVersionKind = "rough_cut" | "final_export" | "captions_file" | "music" | "captions_plan";
 
 export type ProjectVersion = {
   kind: ProjectVersionKind;
@@ -27,6 +27,7 @@ export type ProjectLibraryItem = {
   };
   versions: ProjectVersion[];
   outputUrl: string | null;
+  finalExportUrl: string | null;
 };
 
 const PROJECT_ID_PATTERN = /^project_[A-Za-z0-9_-]+$/;
@@ -65,7 +66,8 @@ async function readProjectLibraryItem(workspaceRoot: string, projectId: string):
       status: "missing_plan",
       counts: { cuts: 0, captions: 0 },
       versions: [],
-      outputUrl: null
+      outputUrl: null,
+      finalExportUrl: null
     };
   }
 
@@ -82,22 +84,26 @@ async function readProjectLibraryItem(workspaceRoot: string, projectId: string):
       status: "invalid_plan",
       counts: { cuts: 0, captions: 0 },
       versions: [],
-      outputUrl: null
+      outputUrl: null,
+      finalExportUrl: null
     };
   }
 
   const plan = planResult.data;
   const roughCutPath = path.join(projectRoot, "renders", "rough-cut.mp4");
   const captionsPath = path.join(projectRoot, "renders", "captions.vtt");
-  const [roughCutStats, captionsStats] = await Promise.all([
+  const finalExport = await findLatestFinalExport(path.join(projectRoot, "renders"));
+  const [roughCutStats, captionsStats, finalExportStats] = await Promise.all([
     stat(roughCutPath).catch(() => null),
-    stat(captionsPath).catch(() => null)
+    stat(captionsPath).catch(() => null),
+    finalExport ? stat(finalExport.filePath).catch(() => null) : null
   ]);
-  const versions = buildVersions(plan, roughCutStats?.mtime ?? null, captionsStats?.mtime ?? null);
+  const versions = buildVersions(plan, roughCutStats?.mtime ?? null, finalExportStats?.mtime ?? null, captionsStats?.mtime ?? null);
   const updatedAt = newestDate([
     projectStats.mtime,
     planStats.mtime,
     roughCutStats?.mtime ?? null,
+    finalExportStats?.mtime ?? null,
     captionsStats?.mtime ?? null
   ]).toISOString();
 
@@ -115,14 +121,23 @@ async function readProjectLibraryItem(workspaceRoot: string, projectId: string):
       captions: plan.captions.length
     },
     versions,
-    outputUrl: roughCutStats ? `/media/${encodeURIComponent(projectId)}/rough-cut.mp4` : null
+    outputUrl: roughCutStats ? `/media/${encodeURIComponent(projectId)}/rough-cut.mp4` : null,
+    finalExportUrl: finalExport ? `/media/${encodeURIComponent(projectId)}/${encodeURIComponent(finalExport.fileName)}` : null
   };
 }
 
-function buildVersions(plan: EditPlan, roughCutMtime: Date | null, captionsMtime: Date | null): ProjectVersion[] {
+function buildVersions(
+  plan: EditPlan,
+  roughCutMtime: Date | null,
+  finalExportMtime: Date | null,
+  captionsMtime: Date | null
+): ProjectVersion[] {
   const versions: ProjectVersion[] = [];
   if (roughCutMtime) {
     versions.push({ kind: "rough_cut", label: "Rough cut", createdAt: roughCutMtime.toISOString() });
+  }
+  if (finalExportMtime) {
+    versions.push({ kind: "final_export", label: "Final export", createdAt: finalExportMtime.toISOString() });
   }
   if (captionsMtime) {
     versions.push({ kind: "captions_file", label: "Captions file", createdAt: captionsMtime.toISOString() });
@@ -156,4 +171,29 @@ function getStatus(plan: EditPlan, hasRoughCut: boolean): ProjectLibraryStatus {
 
 function newestDate(dates: Array<Date | null>) {
   return new Date(Math.max(...dates.filter((date): date is Date => date !== null).map((date) => date.getTime())));
+}
+
+async function findLatestFinalExport(rendersRoot: string): Promise<{ fileName: string; filePath: string } | null> {
+  const entries = await readdir(rendersRoot, { withFileTypes: true }).catch(() => []);
+  const candidates = entries
+    .filter((entry) =>
+      entry.isFile() &&
+      entry.name.toLowerCase().endsWith(".mp4") &&
+      entry.name !== "rough-cut.mp4" &&
+      entry.name !== "preview-sample.mp4"
+    )
+    .map((entry) => ({
+      fileName: entry.name,
+      filePath: path.join(rendersRoot, entry.name)
+    }));
+
+  if (candidates.length === 0) return null;
+  const withStats = await Promise.all(
+    candidates.map(async (candidate) => ({
+      ...candidate,
+      mtimeMs: (await stat(candidate.filePath)).mtimeMs
+    }))
+  );
+  withStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return withStats[0] ?? null;
 }

@@ -183,5 +183,20 @@ async function assertOk(response: Response, label: string): Promise<void> {
   if (response.ok) return;
 
   const body = await response.text().catch(() => "");
+  const parsedBody = parseJsonBody(body);
+  if (label === "YouTube OAuth refresh" && parsedBody?.error === "invalid_grant") {
+    throw new Error(
+      "Reconecte sua conta do YouTube. O refresh token configurado expirou ou foi revogado."
+    );
+  }
   throw new Error(`${label} failed with status ${response.status}${body ? `: ${body}` : ""}`);
+}
+
+function parseJsonBody(body: string): { error?: unknown } | null {
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    return parsed && typeof parsed === "object" ? parsed as { error?: unknown } : null;
+  } catch {
+    return null;
+  }
 }

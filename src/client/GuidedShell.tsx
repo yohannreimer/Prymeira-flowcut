@@ -133,6 +133,7 @@ export type GuidedShellProps = {
   onPublicationVisibilityChange: (v: "private" | "unlisted" | "public") => void;
   onStartFinalExport: () => void;
   onPublishYoutube: () => void;
+  onConnectYoutube: () => void;
 };
 
 export function GuidedShell({
@@ -145,7 +146,7 @@ export function GuidedShell({
   onFileSelected, onStartUpload, onGenerateCaptions,
   onGenerateYoutubePackage, onSelectGeneratedThumbnail,
   onPublicationTitleChange, onPublicationDescriptionChange,
-  onPublicationVisibilityChange, onStartFinalExport, onPublishYoutube
+  onPublicationVisibilityChange, onStartFinalExport, onPublishYoutube, onConnectYoutube
 }: GuidedShellProps) {
   const hasCut = Boolean(job?.outputUrl);
   const hasCaptions = Boolean(editPlan?.captions.length);
@@ -316,9 +317,11 @@ export function GuidedShell({
           isPublishingYoutube={isPublishingYoutube}
           youtubePublicationUrl={youtubePublicationUrl}
           publicationVisibility={publicationVisibility}
+          error={error}
           onPublicationVisibilityChange={onPublicationVisibilityChange}
           onStartFinalExport={onStartFinalExport}
           onPublishYoutube={onPublishYoutube}
+          onConnectYoutube={onConnectYoutube}
         />
       )}
     </AppShell>

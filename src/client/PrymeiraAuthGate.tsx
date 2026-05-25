@@ -136,6 +136,15 @@ function ApiAuthBridge({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function LocalAuthBypass({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    configureApiAuth(null);
+    return () => configureApiAuth(null);
+  }, []);
+
+  return <>{children}</>;
+}
+
 // ── Login layout ─────────────────────────────────────────────────────────────
 
 function FlowcutLoginLayout() {
@@ -503,10 +512,16 @@ function FlowcutLoginLayout() {
 export function PrymeiraAuthGate({
   publishableKey,
   children,
+  allowLocalAuthBypass = false,
 }: {
   publishableKey: string | undefined;
   children: ReactNode;
+  allowLocalAuthBypass?: boolean;
 }) {
+  if (!publishableKey && allowLocalAuthBypass) {
+    return <LocalAuthBypass>{children}</LocalAuthBypass>;
+  }
+
   if (!publishableKey) {
     return (
       <main className="auth-gate">

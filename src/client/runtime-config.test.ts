@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { getClerkPublishableKey, getPrymeiraHubUrl } from "./runtime-config";
+import { getClerkPublishableKey, getPrymeiraHubUrl, isLocalAuthBypassEnabled } from "./runtime-config";
 
 describe("runtime config", () => {
   it("prefers the runtime Clerk publishable key over the Vite build-time key", () => {
@@ -39,5 +39,20 @@ describe("runtime config", () => {
     expect(getPrymeiraHubUrl({
       runtimeConfig: { VITE_PRYMEIRA_HUB_URL: "https://hub.prymeiradigital.com.br/" }
     })).toBe("https://hub.prymeiradigital.com.br");
+  });
+
+  it("enables auth bypass only for local Vite development", () => {
+    expect(isLocalAuthBypassEnabled({
+      viteEnv: { DEV: true },
+      hostname: "127.0.0.1"
+    })).toBe(true);
+    expect(isLocalAuthBypassEnabled({
+      viteEnv: { DEV: true },
+      hostname: "flowcut.prymeiradigital.com.br"
+    })).toBe(false);
+    expect(isLocalAuthBypassEnabled({
+      viteEnv: { DEV: false, MODE: "production" },
+      hostname: "127.0.0.1"
+    })).toBe(false);
   });
 });

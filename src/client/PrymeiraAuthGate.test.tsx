@@ -40,6 +40,17 @@ describe("PrymeiraAuthGate", () => {
     expect(screen.getByText("Configuração Clerk ausente.")).toBeInTheDocument();
   });
 
+  it("renders the app without Clerk when local auth bypass is enabled", () => {
+    render(
+      <PrymeiraAuthGate publishableKey={undefined} allowLocalAuthBypass>
+        <div>Editor</div>
+      </PrymeiraAuthGate>
+    );
+
+    expect(screen.getByText("Editor")).toBeInTheDocument();
+    expect(screen.queryByText("Configuração Clerk ausente.")).not.toBeInTheDocument();
+  });
+
   it("renders Clerk sign-in and the signed-in app shell when configured", async () => {
     render(<PrymeiraAuthGate publishableKey="pk_test_123"><div>Editor</div></PrymeiraAuthGate>);
 

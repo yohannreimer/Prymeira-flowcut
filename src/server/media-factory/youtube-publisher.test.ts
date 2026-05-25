@@ -28,6 +28,26 @@ describe("refreshYouTubeAccessToken", () => {
     expect(body.get("grant_type")).toBe("refresh_token");
     expect(body.get("refresh_token")).toBe("refresh-token");
   });
+
+  it("returns a reconnect message when the refresh token was revoked", async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        error: "invalid_grant",
+        error_description: "Token has been expired or revoked."
+      }), { status: 400 })
+    );
+
+    await expect(
+      refreshYouTubeAccessToken({
+        credentials: {
+          clientId: "client-id",
+          clientSecret: "client-secret",
+          refreshToken: "revoked-token"
+        },
+        fetch
+      })
+    ).rejects.toThrow("Reconecte sua conta do YouTube");
+  });
 });
 
 describe("publishYouTubeVideo", () => {

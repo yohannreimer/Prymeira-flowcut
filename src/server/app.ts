@@ -21,6 +21,7 @@ import {
   type MediaFactoryObjectStorage
 } from "./routes/media-factory-saas";
 import { createProjectRouter, type ProjectDirectUploadStorage } from "./routes/projects";
+import { createYouTubeOAuthRouter } from "./routes/youtube-oauth";
 import {
   startProjectRetentionCleanup as defaultStartProjectRetentionCleanup,
   type startProjectRetentionCleanup
@@ -54,6 +55,7 @@ export type CreateAppOptions = {
   requireTenantAccess?: (authorization: string | undefined) => Promise<PrymeiraTenantContext>;
   directUploadStorage?: ProjectDirectUploadStorage;
   mediaFactorySaas?: MediaFactorySaasOptions;
+  fetch?: typeof fetch;
 };
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -138,6 +140,11 @@ export function createApp(options: CreateAppOptions = {}) {
       handleAccessError(error, res, next);
     }
   });
+  app.use("/api/youtube/oauth", createYouTubeOAuthRouter({
+    workspaceRoot,
+    requireTenantAccess,
+    fetch: options.fetch
+  }));
   app.use("/api/projects", createProjectRouter({
     workspaceRoot,
     jobs,
@@ -178,6 +185,11 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (error instanceof PrymeiraTenantError) {
+      res.status(error.statusCode).json({ error: { code: error.code, message: error.message } });
+      return;
+    }
+
     const message = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ error: message });
   });
