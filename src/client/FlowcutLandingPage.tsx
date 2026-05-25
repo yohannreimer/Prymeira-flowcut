@@ -903,10 +903,13 @@ function CTA() {
       border: `1px solid rgba(252,192,9,0.15)`,
       borderRadius: 20,
       padding: '64px 52px',
-      textAlign: 'center',
       position: 'relative',
       overflow: 'hidden',
       fontFamily: FONT,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      textAlign: 'center',
     }}>
       {/* Ambient glow */}
       <div style={{
@@ -926,11 +929,12 @@ function CTA() {
         letterSpacing: '-0.04em',
         lineHeight: 1.1,
         color: TEXT,
+        maxWidth: '16em',
       }}>
         Comece a editar{' '}
         <span style={{ color: ACCENT }}>agora.</span>
       </h2>
-      <p style={{ margin: '0 0 36px', fontSize: 16, color: TEXT_MUTED, lineHeight: 1.6 }}>
+      <p style={{ margin: '0 0 36px', fontSize: 16, color: TEXT_MUTED, lineHeight: 1.6, maxWidth: '40ch' }}>
         Envie seu primeiro vídeo e veja o rascunho pronto em minutos.
       </p>
       <a href="/" style={{
