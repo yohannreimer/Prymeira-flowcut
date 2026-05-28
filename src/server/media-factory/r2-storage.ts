@@ -1,6 +1,9 @@
+import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl as getAwsSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -21,6 +24,11 @@ type R2GetSignedUrl = (
   command: PutObjectCommand,
   options: { expiresIn: number }
 ) => Promise<string>;
+
+export type R2DownloadProgress = {
+  transferredBytes: number;
+  totalBytes: number | null;
+};
 
 export function getR2ConfigFromEnv(env: NodeJS.ProcessEnv = process.env): R2Config | null {
   const accessKeyId = env.R2_ACCESS_KEY_ID?.trim();
@@ -161,24 +169,28 @@ export async function downloadR2ObjectToFile({
   objectKey,
   outputPath,
   config,
-  client = createR2Client(config)
+  client = createR2Client(config),
+  onProgress
 }: {
   objectKey: string;
   outputPath: string;
   config: R2Config;
   client?: R2ClientLike;
+  onProgress?: (progress: R2DownloadProgress) => void;
 }): Promise<void> {
   const response = await client.send(new GetObjectCommand({
     Bucket: config.bucket,
     Key: objectKey
-  })) as { Body?: unknown };
+  })) as { Body?: unknown; ContentLength?: unknown };
   if (!response.Body) {
     throw new Error(`R2 object ${objectKey} did not return a body.`);
   }
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  const bytes = await streamToUint8Array(response.Body);
-  await fs.writeFile(outputPath, bytes);
+  const totalBytes = typeof response.ContentLength === "number" && Number.isFinite(response.ContentLength)
+    ? response.ContentLength
+    : null;
+  await streamBodyToFile(response.Body, outputPath, totalBytes, onProgress);
 }
 
 export async function deleteR2Object({
@@ -196,21 +208,36 @@ export async function deleteR2Object({
   }));
 }
 
-async function streamToUint8Array(body: unknown): Promise<Uint8Array> {
-  if (body instanceof Uint8Array) return body;
+async function streamBodyToFile(
+  body: unknown,
+  outputPath: string,
+  totalBytes: number | null,
+  onProgress?: (progress: R2DownloadProgress) => void
+): Promise<void> {
+  const readable = bodyToReadable(body);
+  let transferredBytes = 0;
+  const progress = new Transform({
+    transform(chunk: Buffer | string, _encoding, callback) {
+      transferredBytes += Buffer.byteLength(chunk);
+      onProgress?.({ transferredBytes, totalBytes });
+      callback(null, chunk);
+    }
+  });
+
+  await pipeline(readable, progress, createWriteStream(outputPath));
+  onProgress?.({ transferredBytes, totalBytes });
+}
+
+function bodyToReadable(body: unknown): Readable {
+  if (body instanceof Uint8Array) return Readable.from([body]);
   if (typeof Blob !== "undefined" && body instanceof Blob) {
-    return new Uint8Array(await body.arrayBuffer());
+    return Readable.fromWeb(body.stream() as unknown as NodeReadableStream<Uint8Array>);
   }
   if (body instanceof Readable) {
-    const chunks: Uint8Array[] = [];
-    for await (const chunk of body) {
-      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-    }
-    return Buffer.concat(chunks);
+    return body;
   }
   if (body && typeof body === "object" && "getReader" in body) {
-    const response = new Response(body as ReadableStream);
-    return new Uint8Array(await response.arrayBuffer());
+    return Readable.fromWeb(body as unknown as NodeReadableStream<Uint8Array>);
   }
   throw new Error("Unsupported R2 object body type.");
 }

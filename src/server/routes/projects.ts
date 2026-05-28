@@ -36,6 +36,7 @@ import {
   createUploadSession,
   type UploadSession
 } from "../media-factory-saas/upload-sessions";
+import type { R2DownloadProgress } from "../media-factory/r2-storage";
 import { publishYouTubeVideo } from "../media-factory/youtube-publisher";
 import { PrymeiraTenantError, getTenantProjectRoot, type PrymeiraTenantContext } from "../prymeira/tenant";
 import { touchProjectActivity } from "../project-retention";
@@ -109,6 +110,7 @@ export type ProjectDirectUploadStorage = {
   downloadObjectToFile(input: {
     storageKey: string;
     outputPath: string;
+    onProgress?: (progress: R2DownloadProgress) => void;
   }): Promise<void>;
   deleteObject?(storageKey: string): Promise<void>;
 };
@@ -1067,6 +1069,7 @@ function queueDirectUploadProjectJob({
   projectJobRunner: (input: RunProjectJobInput) => Promise<void>;
   cutPresetId?: RunProjectJobInput["cutPresetId"];
 }) {
+  let downloadComplete = false;
   void Promise.resolve().then(async () => {
     jobs.update(job.id, {
       status: "running",
@@ -1076,8 +1079,13 @@ function queueDirectUploadProjectJob({
     console.info(`[flowcut] direct upload ${upload.id}: downloading ${upload.sizeBytes} bytes from R2`);
     await directUploadStorage.downloadObjectToFile({
       storageKey: upload.storageKey,
-      outputPath: sourcePath
+      outputPath: sourcePath,
+      onProgress: createDirectUploadProgressReporter({
+        jobs,
+        jobId: job.id
+      })
     });
+    downloadComplete = true;
     console.info(`[flowcut] direct upload ${upload.id}: stored source file at ${sourcePath}`);
 
     if (directUploadStorage.deleteObject) {
@@ -1103,8 +1111,11 @@ function queueDirectUploadProjectJob({
       jobs,
       cutPresetId
     });
-  }).catch((error: unknown) => {
+  }).catch(async (error: unknown) => {
     const message = error instanceof Error ? error.message : "Unknown error";
+    if (!downloadComplete) {
+      await rm(sourcePath, { force: true }).catch(() => undefined);
+    }
     jobs.update(job.id, {
       status: "failed",
       stage: "failed",
@@ -1112,6 +1123,52 @@ function queueDirectUploadProjectJob({
       error: message
     });
   });
+}
+
+function createDirectUploadProgressReporter({
+  jobs,
+  jobId
+}: {
+  jobs: JobStore;
+  jobId: string;
+}) {
+  let lastPercent = -1;
+  let lastTransferredBucket = -1;
+  return ({ transferredBytes, totalBytes }: R2DownloadProgress) => {
+    if (totalBytes && totalBytes > 0) {
+      const percent = Math.max(0, Math.min(100, Math.floor((transferredBytes / totalBytes) * 100)));
+      if (percent === lastPercent) return;
+      lastPercent = percent;
+      jobs.update(jobId, {
+        status: "running",
+        stage: "upload",
+        message: `Recebendo video do R2 - ${percent}%`
+      });
+      return;
+    }
+
+    const transferredBucket = Math.floor(transferredBytes / (10 * 1024 * 1024));
+    if (transferredBucket === lastTransferredBucket) return;
+    lastTransferredBucket = transferredBucket;
+    jobs.update(jobId, {
+      status: "running",
+      stage: "upload",
+      message: `Recebendo video do R2 - ${formatBytes(transferredBytes)}`
+    });
+  };
+}
+
+function formatBytes(bytes: number) {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${Math.floor(bytes / (1024 * 1024))} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.floor(bytes / 1024)} KB`;
+  }
+  return `${bytes} B`;
 }
 
 function serializeUpload(upload: UploadSession) {

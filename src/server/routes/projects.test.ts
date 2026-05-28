@@ -266,8 +266,15 @@ describe("project routes", () => {
       const downloadHasStarted = new Promise<void>((resolve) => {
         resolveDownloadStarted = resolve;
       });
-      const downloadObjectToFile = vi.fn(({ outputPath }: { outputPath: string }) => {
+      const downloadObjectToFile = vi.fn(({
+        outputPath,
+        onProgress
+      }: {
+        outputPath: string;
+        onProgress?: (progress: { transferredBytes: number; totalBytes: number | null }) => void;
+      }) => {
         resolveDownloadStarted?.();
+        onProgress?.({ transferredBytes: 306, totalBytes: 612 });
         return new Promise<void>((resolveDownload) => {
           finishDownload = () => {
             void writeFile(outputPath, "video-bytes").then(resolveDownload);
@@ -321,7 +328,8 @@ describe("project routes", () => {
       await expect(readFile(sourcePath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
       expect(jobs.get(response.body.job.id)).toMatchObject({
         status: "running",
-        stage: "upload"
+        stage: "upload",
+        message: "Recebendo video do R2 - 50%"
       });
 
       finishDownload();
@@ -337,6 +345,60 @@ describe("project routes", () => {
         expect(deleteObject).toHaveBeenCalledWith(created.body.upload.storageKey);
       });
       expect(jobs.get(response.body.job.id)?.sourcePath).toBe(sourcePath);
+    });
+  });
+
+  it("removes the partial source file when a background R2 download fails", async () => {
+    await withTempDir("ai-editor-route-direct-download-failure-", async (dir) => {
+      const jobs = createJobStore();
+      const requireTenantAccess = tenantAccess();
+      const downloadObjectToFile = vi.fn(async ({ outputPath }: { outputPath: string }) => {
+        await writeFile(outputPath, "partial-video-bytes");
+        throw new Error("R2 stream interrupted");
+      });
+      const app = createApp({
+        workspaceRoot: dir,
+        jobs,
+        runJobs: false,
+        requireTenantAccess,
+        directUploadStorage: {
+          createSignedUploadUrl: vi.fn().mockResolvedValue("https://r2.test/signed-put"),
+          getUploadedObjectSize: vi.fn().mockResolvedValue(612),
+          downloadObjectToFile
+        }
+      });
+      const created = await request(app)
+        .post("/api/projects/uploads")
+        .set("Authorization", "Bearer clerk-token")
+        .send({
+          fileName: "aula longa.mp4",
+          contentType: "video/mp4",
+          sizeBytes: 612
+        });
+
+      const response = await request(app)
+        .post(`/api/projects/uploads/${created.body.upload.id}/complete`)
+        .set("Authorization", "Bearer clerk-token")
+        .send({ cutPreset: "normal" });
+
+      expect(response.status).toBe(201);
+      const sourcePath = path.join(
+        dir,
+        "workspaces",
+        "workspace_123",
+        "projects",
+        response.body.projectId,
+        "uploads",
+        "source.mp4"
+      );
+
+      await vi.waitFor(() => {
+        expect(jobs.get(response.body.job.id)).toMatchObject({
+          status: "failed",
+          error: "R2 stream interrupted"
+        });
+      });
+      await expect(access(sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
     });
   });
 

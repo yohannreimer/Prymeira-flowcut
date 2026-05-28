@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { withTempDir } from "../../test/fixtures";
 import {
@@ -152,6 +153,37 @@ describe("getR2ObjectSize", () => {
 describe("downloadR2ObjectToFile", () => {
   it("writes an R2 object stream to a local file", async () => {
     await withTempDir("media-factory-r2-download-", async (dir) => {
+      const outputPath = path.join(dir, "uploads", "source.mp4");
+      const onProgress = vi.fn();
+      const send = vi.fn().mockResolvedValue({
+        Body: Readable.from([Buffer.from("video-"), Buffer.from("bytes")]),
+        ContentLength: 11
+      });
+
+      await downloadR2ObjectToFile({
+        objectKey: "workspaces/workspace_123/jobs/job_123/source/video.mp4",
+        outputPath,
+        config: {
+          accessKeyId: "access-key",
+          secretAccessKey: "secret-key",
+          endpoint: "https://account.r2.cloudflarestorage.com",
+          bucket: "mediafactory-temp",
+          publicBaseUrl: "https://pub-example.r2.dev"
+        },
+        client: { send },
+        onProgress
+      });
+
+      await expect(fs.readFile(outputPath, "utf8")).resolves.toBe("video-bytes");
+      expect(onProgress).toHaveBeenLastCalledWith({
+        transferredBytes: 11,
+        totalBytes: 11
+      });
+    });
+  });
+
+  it("supports web streams returned by fetch-based S3 clients", async () => {
+    await withTempDir("media-factory-r2-download-web-", async (dir) => {
       const outputPath = path.join(dir, "uploads", "source.mp4");
       const send = vi.fn().mockResolvedValue({
         Body: new Blob(["video-bytes"]).stream()

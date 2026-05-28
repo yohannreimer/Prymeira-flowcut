@@ -32,7 +32,8 @@ export function createR2ProjectDirectUploadStorage(
       return downloadR2ObjectToFile({
         objectKey: input.storageKey,
         outputPath: input.outputPath,
-        config
+        config,
+        onProgress: input.onProgress
       });
     },
     deleteObject(storageKey) {
