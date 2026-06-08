@@ -10,6 +10,11 @@ import {
 import { ptBR } from "@clerk/localizations";
 import { configureApiAuth } from "./api";
 
+function isDemoModeEnabled(): boolean {
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
+  return env?.VITE_DEMO_MODE === "true";
+}
+
 // ── Timeline clip decoration — film/edit motif ───────────────────────────────
 const TIMELINE_ROWS: Array<Array<{ w: number; gap: number; gold?: boolean }>> = [
   [
@@ -138,7 +143,7 @@ function ApiAuthBridge({ children }: { children: ReactNode }) {
 
 function LocalAuthBypass({ children }: { children: ReactNode }) {
   useEffect(() => {
-    configureApiAuth(null);
+    configureApiAuth(() => Promise.resolve("demo-token"));
     return () => configureApiAuth(null);
   }, []);
 
@@ -518,6 +523,10 @@ export function PrymeiraAuthGate({
   children: ReactNode;
   allowLocalAuthBypass?: boolean;
 }) {
+  if (isDemoModeEnabled()) {
+    return <LocalAuthBypass>{children}</LocalAuthBypass>;
+  }
+
   if (!publishableKey && allowLocalAuthBypass) {
     return <LocalAuthBypass>{children}</LocalAuthBypass>;
   }

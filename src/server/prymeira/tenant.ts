@@ -47,6 +47,22 @@ function requireWorkspaceId(decision: AccessDecision): string {
   return decision.workspace_id;
 }
 
+function isDemoMode(): boolean {
+  return process.env.DEMO_MODE === "true";
+}
+
+function createDemoTenantContext(token: string, productKey: string): PrymeiraTenantContext {
+  return {
+    token,
+    workspaceId: process.env.DEMO_WORKSPACE_ID ?? "demo_workspace",
+    workspaceRole: "owner",
+    productKey,
+    productRole: "owner",
+    plan: "suite",
+    limits: {}
+  };
+}
+
 export function createPrymeiraTenantAccess({
   accountApiUrl,
   productKey,
@@ -65,6 +81,14 @@ export function createPrymeiraTenantAccess({
     const token = getBearerToken(authorization);
     if (!token) {
       throw new PrymeiraTenantError(401, "missing_auth_token", "Missing Clerk bearer token.");
+    }
+
+    if (isDemoMode()) {
+      if (token !== "demo-token") {
+        throw new PrymeiraTenantError(401, "missing_auth_token", "Missing demo bearer token.");
+      }
+
+      return createDemoTenantContext(token, productKey);
     }
 
     let decision: AccessDecision;
