@@ -19,7 +19,7 @@ import {
 } from "../../shared/edit-plan";
 import { exportSettingsSchema } from "../../shared/export-settings";
 import { manualRenderRequestSchema } from "../../shared/manual-edits";
-import { listProjectLibrary } from "../../shared/project-library";
+import { listProjectLibrary, type ProjectLibraryItem } from "../../shared/project-library";
 import { createProjectWorkspace, type ProjectWorkspace } from "../workspace";
 import type { JobStore } from "../jobs/job-store";
 import { runCaptionJob, type RunCaptionJobInput } from "../jobs/run-caption-job";
@@ -28,6 +28,7 @@ import { runManualRenderJob, type RunManualRenderJobInput } from "../jobs/run-ma
 import { runMotionJob, type RunMotionJobInput } from "../jobs/run-motion-job";
 import { runProjectJob, type RunProjectJobInput } from "../jobs/run-project-job";
 import { runYoutubePackageJob, type RunYoutubePackageJobInput } from "../jobs/run-youtube-package-job";
+import { publishVerticalYouTubeShorts } from "../jobs/publish-vertical-youtube-shorts";
 import type { ProjectJob } from "../jobs/job-store";
 import {
   InMemoryUploadSessionRepository,
@@ -66,6 +67,9 @@ const youtubePublishRequestSchema = z.object({
   privacyStatus: z.enum(["private", "unlisted", "public"]).default("private"),
   thumbnailName: z.string().nullable().optional()
 }).strict();
+const youtubeShortsPublishRequestSchema = z.object({
+  privacyStatus: z.enum(["private", "unlisted", "public"]).default("private")
+}).strict().default({});
 const finalPackageRequestSchema = z.object({
   title: z.string().trim().max(100).optional(),
   description: z.string().max(5000).optional(),
@@ -177,7 +181,11 @@ export function createProjectRouter(options: ProjectRouteOptions) {
   router.get("/", async (_req, res, next) => {
     try {
       const context = getRouteContext(res);
-      const projects = await listProjectLibrary(context.workspaceRoot);
+      const projects = mergeActiveProjectJobs(
+        await listProjectLibrary(context.workspaceRoot),
+        options.jobs.list(),
+        context.tenant?.workspaceId ?? null
+      );
       res.json({ projects });
     } catch (error) {
       handleTenantError(error, res, next);
@@ -720,6 +728,88 @@ export function createProjectRouter(options: ProjectRouteOptions) {
         }
       });
     } catch (error) {
+      handleTenantError(error, res, next);
+    }
+  });
+
+  router.get("/:projectId/vertical-package/summary", async (req, res, next) => {
+    try {
+      const { projectId } = req.params;
+      if (!PROJECT_ID_PATTERN.test(projectId)) {
+        res.status(404).json({ error: "Vertical package not found" });
+        return;
+      }
+
+      const context = getRouteContext(res);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
+      const summary = JSON.parse(await readFile(path.join(workspace.root, "vertical-package.json"), "utf8"));
+      res.json({ summary });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        res.status(404).json({ error: "Vertical package not found" });
+        return;
+      }
+      handleTenantError(error, res, next);
+    }
+  });
+
+  router.get("/:projectId/vertical-package/clips/:rankDir/clip.mp4", async (req, res, next) => {
+    try {
+      const { projectId, rankDir } = req.params;
+      if (!PROJECT_ID_PATTERN.test(projectId) || !isVerticalClipRankDir(rankDir)) {
+        res.status(404).json({ error: "Vertical clip not found" });
+        return;
+      }
+
+      const context = getRouteContext(res);
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
+      res.sendFile(path.join(workspace.root, "shorts", rankDir, "clip.mp4"), (error) => {
+        if (error && !res.headersSent) {
+          next(error);
+        }
+      });
+    } catch (error) {
+      handleTenantError(error, res, next);
+    }
+  });
+
+  router.post("/:projectId/vertical-package/youtube-shorts-publish", async (req, res, next) => {
+    try {
+      const { projectId } = req.params;
+      if (!PROJECT_ID_PATTERN.test(projectId)) {
+        res.status(404).json({ error: "Vertical package not found" });
+        return;
+      }
+      const bodyResult = youtubeShortsPublishRequestSchema.safeParse(req.body ?? {});
+      if (!bodyResult.success) {
+        res.status(400).json({ error: "Invalid YouTube Shorts publication payload" });
+        return;
+      }
+
+      const context = getRouteContext(res);
+      const credentials = await resolveYouTubeOAuthCredentials({
+        workspaceRoot: options.workspaceRoot,
+        workspaceId: context.tenant?.workspaceId ?? null
+      });
+      if (!credentials) {
+        res.status(400).json({
+          error: "Credenciais do YouTube ausentes. Conecte o YouTube ou configure YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET e YOUTUBE_REFRESH_TOKEN."
+        });
+        return;
+      }
+
+      const workspace = await createProjectWorkspace(context.workspaceRoot, projectId);
+      const result = await publishVerticalYouTubeShorts({
+        workspace,
+        credentials,
+        privacyStatus: bodyResult.data.privacyStatus
+      });
+      res.json(result);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        res.status(404).json({ error: "Vertical package not found" });
+        return;
+      }
       handleTenantError(error, res, next);
     }
   });
@@ -1370,12 +1460,56 @@ async function hasFinalExport(rendersPath: string) {
 }
 
 function isFinalExportFileName(name: string) {
+  if (name.startsWith(".") || name.includes(".tmp.")) return false;
   return name !== "rough-cut.mp4" && name !== "preview-sample.mp4";
 }
 
+function isVerticalClipRankDir(value: string) {
+  return /^rank-\d{2}$/.test(value);
+}
+
+function mergeActiveProjectJobs(
+  projects: ProjectLibraryItem[],
+  jobs: ProjectJob[],
+  workspaceId: string | null
+): ProjectLibraryItem[] {
+  const activeJobsByProject = new Map<string, ProjectJob>();
+  for (const job of jobs) {
+    if (!isActiveProjectJob(job)) continue;
+    if (workspaceId !== null && job.workspaceId !== workspaceId) continue;
+    const current = activeJobsByProject.get(job.projectId);
+    if (!current || job.updatedAt > current.updatedAt) {
+      activeJobsByProject.set(job.projectId, job);
+    }
+  }
+
+  return projects.map((project) => {
+    const activeJob = activeJobsByProject.get(project.id);
+    if (!activeJob) return project;
+    return {
+      ...project,
+      updatedAt: activeJob.updatedAt > project.updatedAt ? activeJob.updatedAt : project.updatedAt,
+      status: "processing",
+      outputUrl: null,
+      error: null
+    };
+  });
+}
+
+function isActiveProjectJob(job: ProjectJob) {
+  return job.status === "queued" || job.status === "running";
+}
+
 function serializeJob(job: ProjectJob, workspaceRoot: string) {
+  const {
+    sourcePath: _sourcePath,
+    outputPath: _outputPath,
+    planPath: _planPath,
+    ...publicJob
+  } = job;
+
   return {
-    ...job,
+    ...publicJob,
     outputUrl: getRenderMediaUrl(job, workspaceRoot)
   };
 }

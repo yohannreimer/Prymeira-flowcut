@@ -1,7 +1,9 @@
 import { config as loadDotenv } from "dotenv";
 import { createApp } from "./app";
 
-loadDotenv({ path: ".env.local" });
+if (process.env.NODE_ENV !== "production") {
+  loadDotenv({ path: ".env.local" });
+}
 loadDotenv();
 
 export function resolvePort(rawPort = process.env.PORT) {

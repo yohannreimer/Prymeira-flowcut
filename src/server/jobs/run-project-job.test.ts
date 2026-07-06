@@ -51,6 +51,83 @@ describe("runProjectJob", () => {
     });
   });
 
+  it("routes vertical media to the SupoClip project job without running the horizontal rough-cut flow", async () => {
+    await withTempDir("ai-editor-vertical-job-", async (dir) => {
+      const workspace = await createProjectWorkspace(dir, "project_1");
+      const jobs = createJobStore();
+      const job = jobs.create({ projectId: workspace.projectId, sourcePath: "/tmp/source-vertical.mp4" });
+      const analyzeSilence = vi.fn().mockResolvedValue([]);
+      const renderRoughCut = vi.fn().mockResolvedValue(path.join(workspace.renders, "rough-cut.mp4"));
+      const runVerticalProjectJob = vi.fn().mockResolvedValue(undefined);
+
+      await runProjectJob({
+        jobId: job.id,
+        workspace,
+        sourcePath: "/tmp/source-vertical.mp4",
+        jobs
+      }, {
+        probeMedia: vi.fn().mockResolvedValue({
+          durationSec: 45,
+          width: 1080,
+          height: 1920,
+          fps: 30,
+          hasAudio: true
+        }),
+        analyzeSilence,
+        renderRoughCut,
+        runBasicQa: vi.fn().mockResolvedValue({ status: "passed", warnings: [] }),
+        runVerticalProjectJob,
+        now: () => new Date("2026-05-05T00:00:00.000Z")
+      } as RunProjectJobDeps & { runVerticalProjectJob: typeof runVerticalProjectJob });
+
+      expect(runVerticalProjectJob).toHaveBeenCalledWith({
+        jobId: job.id,
+        workspace,
+        sourcePath: "/tmp/source-vertical.mp4",
+        jobs,
+        metadata: {
+          durationSec: 45,
+          width: 1080,
+          height: 1920,
+          fps: 30,
+          hasAudio: true
+        }
+      });
+      expect(analyzeSilence).not.toHaveBeenCalled();
+      expect(renderRoughCut).not.toHaveBeenCalled();
+    });
+  });
+
+  it("uses the default vertical SupoClip runner for vertical media", async () => {
+    await withTempDir("ai-editor-default-vertical-job-", async (dir) => {
+      const workspace = await createProjectWorkspace(dir, "project_1");
+      const jobs = createJobStore();
+      const job = jobs.create({ projectId: workspace.projectId, sourcePath: "/tmp/source-vertical.mp4" });
+
+      await runProjectJob({
+        jobId: job.id,
+        workspace,
+        sourcePath: "/tmp/source-vertical.mp4",
+        jobs
+      }, {
+        probeMedia: vi.fn().mockResolvedValue({
+          durationSec: 45,
+          width: 1080,
+          height: 1920,
+          fps: 30,
+          hasAudio: true
+        })
+      });
+
+      expect(jobs.get(job.id)).toMatchObject({
+        status: "failed",
+        stage: "supoclip_upload",
+        message: "Vertical SupoClip job failed",
+        error: "SupoClip vertical processing is disabled. Set SUPOCLIP_ENABLED=true."
+      });
+    });
+  });
+
   it("completes with warning status when render QA reports warnings", async () => {
     await withTempDir("ai-editor-job-", async (dir) => {
       const workspace = await createProjectWorkspace(dir, "project_1");
@@ -162,6 +239,41 @@ describe("runProjectJob", () => {
       });
       await expect(readFile(workspace.planPath, "utf8").then(JSON.parse)).resolves.toMatchObject({
         removed: [{ startSec: 2.1, endSec: 5.9, reason: "silence" }]
+      });
+    });
+  });
+
+  it("persists render failures in the edit plan so the UI can show the error after restart", async () => {
+    await withTempDir("ai-editor-job-render-failure-", async (dir) => {
+      const workspace = await createProjectWorkspace(dir, "project_1");
+      const jobs = createJobStore();
+      const job = jobs.create({ projectId: workspace.projectId, sourcePath: "/tmp/source.mp4" });
+      const deps: RunProjectJobDeps = {
+        probeMedia: vi.fn().mockResolvedValue({
+          durationSec: 8,
+          width: 1280,
+          height: 720,
+          fps: 30,
+          hasAudio: false
+        }),
+        renderRoughCut: vi.fn().mockRejectedValue(new Error("ffmpeg exited before writing trailer")),
+        now: () => new Date("2026-05-05T00:00:00.000Z")
+      };
+
+      await runProjectJob({ jobId: job.id, workspace, sourcePath: "/tmp/source.mp4", jobs }, deps);
+
+      expect(jobs.get(job.id)).toMatchObject({
+        status: "failed",
+        stage: "render",
+        message: "Project job failed",
+        planPath: workspace.planPath,
+        error: "ffmpeg exited before writing trailer"
+      });
+      await expect(readFile(workspace.planPath, "utf8").then(JSON.parse)).resolves.toMatchObject({
+        qa: {
+          status: "failed",
+          warnings: ["Render failed during render: ffmpeg exited before writing trailer"]
+        }
       });
     });
   });

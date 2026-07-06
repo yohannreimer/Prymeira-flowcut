@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it } from "vitest";
 import { checkDependencies, parseDependencyResult, type SpawnedBinary } from "./dependencies";
+import type { AppConfig } from "./config";
 
 describe("parseDependencyResult", () => {
   it("marks successful binaries as available", () => {
@@ -31,6 +32,21 @@ class FakeSpawnedBinary extends EventEmitter implements SpawnedBinary {
   }
 }
 
+const baseConfig: AppConfig = {
+  workspaceRoot: "/tmp/workspace",
+  localMode: false,
+  ffmpegPath: "ffmpeg",
+  ffprobePath: "ffprobe",
+  autoEditorPath: "auto-editor",
+  uploadFileSizeLimitBytes: 1024,
+  projectRetentionMinutes: 30,
+  prymeiraAccountApiUrl: null,
+  prymeiraProductKey: "media",
+  publicAppUrl: null,
+  allowedOrigins: [],
+  jsonBodyLimitBytes: 1024 * 1024
+};
+
 describe("checkDependencies", () => {
   it("aggregates required and optional dependency availability", async () => {
     const results: Record<string, { code: number; output: string }> = {
@@ -40,16 +56,7 @@ describe("checkDependencies", () => {
     };
 
     const dependencies = await checkDependencies(
-      {
-        workspaceRoot: "/tmp/workspace",
-        ffmpegPath: "ffmpeg",
-        ffprobePath: "ffprobe",
-        autoEditorPath: "auto-editor",
-        uploadFileSizeLimitBytes: 1024,
-        projectRetentionMinutes: 30,
-        prymeiraAccountApiUrl: null,
-        prymeiraProductKey: "media"
-      },
+      baseConfig,
       {
         spawnBinary(command) {
           const child = new FakeSpawnedBinary();
@@ -75,16 +82,7 @@ describe("checkDependencies", () => {
     const children: FakeSpawnedBinary[] = [];
 
     const dependencies = await checkDependencies(
-      {
-        workspaceRoot: "/tmp/workspace",
-        ffmpegPath: "ffmpeg",
-        ffprobePath: "ffprobe",
-        autoEditorPath: "auto-editor",
-        uploadFileSizeLimitBytes: 1024,
-        projectRetentionMinutes: 30,
-        prymeiraAccountApiUrl: null,
-        prymeiraProductKey: "media"
-      },
+      baseConfig,
       {
         timeoutMs: 1,
         spawnBinary() {

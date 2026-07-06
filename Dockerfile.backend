@@ -25,6 +25,10 @@ COPY --from=build /app/dist/server dist/server
 COPY --from=build /app/packages/auth/dist packages/auth/dist
 COPY src/remotion src/remotion
 COPY src/shared src/shared
+RUN addgroup -S appgroup \
+  && adduser -S appuser -G appgroup \
+  && mkdir -p /app/workspace /tmp/ai-editor-uploads \
+  && chown -R appuser:appgroup /app /tmp/ai-editor-uploads
 
 ENV NODE_ENV=production
 ENV PORT=4317
@@ -35,5 +39,7 @@ ENV FFPROBE_PATH=ffprobe
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 EXPOSE 4317
+
+USER appuser
 
 CMD ["node", "dist/server/index.js"]

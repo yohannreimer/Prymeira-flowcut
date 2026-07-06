@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import { setImmediate as waitForBackgroundJob } from "node:timers/promises";
 import path from "node:path";
 import request from "supertest";
@@ -92,6 +92,150 @@ describe("project routes", () => {
         expect.objectContaining({ kind: "music" }),
         expect.objectContaining({ kind: "captions_plan" })
       ]));
+    });
+  });
+
+  it("shows an interrupted render as failed instead of rendered", async () => {
+    await withTempDir("ai-editor-route-interrupted-render-", async (dir) => {
+      const projectId = "project_interrupted";
+      const projectRoot = path.join(dir, projectId);
+      const rendersRoot = path.join(projectRoot, "renders");
+      await mkdir(rendersRoot, { recursive: true });
+      const roughCutPath = path.join(rendersRoot, "rough-cut.mp4");
+      await writeFile(roughCutPath, Buffer.from("partial mp4 without final metadata"));
+      const stalePartialDate = new Date(Date.now() - 10 * 60_000);
+      await utimes(roughCutPath, stalePartialDate, stalePartialDate);
+      await writeFile(path.join(projectRoot, "edit-plan.json"), JSON.stringify({
+        id: "plan_project_interrupted",
+        projectId,
+        version: 1,
+        source: {
+          path: "/uploads/source.mp4",
+          durationSec: 12,
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          hasAudio: true
+        },
+        segments: [
+          { id: "seg_1", sourceStartSec: 0, sourceEndSec: 8, timelineStartSec: 0, timelineEndSec: 8, reason: "kept speech/content" }
+        ],
+        removed: [],
+        captions: [],
+        overlays: [],
+        color: { presetId: "neutral", label: "Neutral" },
+        audio: { music: null, voiceTargetLufs: -16 },
+        qa: { status: "not_run", warnings: [] },
+        createdAt: "2026-05-05T00:00:00.000Z"
+      }));
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
+
+      const response = await request(app).get("/api/projects");
+
+      expect(response.status).toBe(200);
+      expect(response.body.projects[0]).toMatchObject({
+        id: projectId,
+        status: "failed",
+        error: "Render interrompido antes da verificação de qualidade.",
+        outputUrl: null
+      });
+    });
+  });
+
+  it("keeps a recently written partial render processing when the dev server lost the in-memory job", async () => {
+    await withTempDir("ai-editor-route-recent-partial-render-", async (dir) => {
+      const projectId = "project_recent_partial";
+      const projectRoot = path.join(dir, projectId);
+      const rendersRoot = path.join(projectRoot, "renders");
+      await mkdir(rendersRoot, { recursive: true });
+      await writeFile(path.join(rendersRoot, "rough-cut.mp4"), Buffer.from("partial mp4 still growing"));
+      await writeFile(path.join(projectRoot, "edit-plan.json"), JSON.stringify({
+        id: "plan_project_recent_partial",
+        projectId,
+        version: 1,
+        source: {
+          path: "/uploads/source.mp4",
+          durationSec: 12,
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          hasAudio: true
+        },
+        segments: [
+          { id: "seg_1", sourceStartSec: 0, sourceEndSec: 8, timelineStartSec: 0, timelineEndSec: 8, reason: "kept speech/content" }
+        ],
+        removed: [],
+        captions: [],
+        overlays: [],
+        color: { presetId: "neutral", label: "Neutral" },
+        audio: { music: null, voiceTargetLufs: -16 },
+        qa: { status: "not_run", warnings: [] },
+        createdAt: "2026-05-05T00:00:00.000Z"
+      }));
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
+
+      const response = await request(app).get("/api/projects");
+
+      expect(response.status).toBe(200);
+      expect(response.body.projects[0]).toMatchObject({
+        id: projectId,
+        status: "processing",
+        error: null,
+        outputUrl: null
+      });
+    });
+  });
+
+  it("keeps an actively rendering project out of the failed library state", async () => {
+    await withTempDir("ai-editor-route-active-render-", async (dir) => {
+      const projectId = "project_rendering";
+      const projectRoot = path.join(dir, projectId);
+      const rendersRoot = path.join(projectRoot, "renders");
+      const roughCutPath = path.join(rendersRoot, "rough-cut.mp4");
+      await mkdir(rendersRoot, { recursive: true });
+      await writeFile(roughCutPath, Buffer.from("partial mp4 still being written"));
+      await writeFile(path.join(projectRoot, "edit-plan.json"), JSON.stringify({
+        id: "plan_project_rendering",
+        projectId,
+        version: 1,
+        source: {
+          path: path.join(projectRoot, "uploads", "source.mp4"),
+          durationSec: 12,
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          hasAudio: true
+        },
+        segments: [
+          { id: "seg_1", sourceStartSec: 0, sourceEndSec: 8, timelineStartSec: 0, timelineEndSec: 8, reason: "kept speech/content" }
+        ],
+        removed: [],
+        captions: [],
+        overlays: [],
+        color: { presetId: "neutral", label: "Neutral" },
+        audio: { music: null, voiceTargetLufs: -16 },
+        qa: { status: "not_run", warnings: [] },
+        createdAt: "2026-05-05T00:00:00.000Z"
+      }));
+      const jobs = createJobStore();
+      const job = jobs.create({ projectId, sourcePath: path.join(projectRoot, "uploads", "source.mp4") });
+      jobs.update(job.id, {
+        status: "running",
+        stage: "render",
+        message: "Rendering rough cut",
+        outputPath: roughCutPath
+      });
+      const app = createApp({ workspaceRoot: dir, jobs, runJobs: false });
+
+      const response = await request(app).get("/api/projects");
+
+      expect(response.status).toBe(200);
+      expect(response.body.projects[0]).toMatchObject({
+        id: projectId,
+        status: "processing",
+        error: null,
+        outputUrl: null
+      });
     });
   });
 
@@ -652,6 +796,64 @@ describe("project routes", () => {
     });
   });
 
+  it("returns vertical SupoClip package summaries", async () => {
+    await withTempDir("ai-editor-route-vertical-package-", async (dir) => {
+      const projectId = "project_123";
+      const projectRoot = path.join(dir, projectId);
+      await mkdir(path.join(projectRoot, "shorts", "rank-01"), { recursive: true });
+      await writeFile(path.join(projectRoot, "vertical-package.json"), JSON.stringify({
+        projectId,
+        taskId: "task-123",
+        status: "ready",
+        clips: [
+          {
+            id: "clip-1",
+            rank: 1,
+            title: "Clip 1",
+            clipUrl: `/api/projects/${projectId}/vertical-package/clips/rank-01/clip.mp4`
+          }
+        ],
+        warnings: []
+      }));
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
+
+      const response = await request(app).get(`/api/projects/${projectId}/vertical-package/summary`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.summary).toMatchObject({
+        projectId,
+        taskId: "task-123",
+        status: "ready",
+        clips: [
+          {
+            id: "clip-1",
+            rank: 1,
+            title: "Clip 1"
+          }
+        ],
+        warnings: []
+      });
+    });
+  });
+
+  it("serves only safe vertical SupoClip clips", async () => {
+    await withTempDir("ai-editor-route-vertical-clips-", async (dir) => {
+      const projectId = "project_123";
+      const projectRoot = path.join(dir, projectId);
+      await mkdir(path.join(projectRoot, "shorts", "rank-01"), { recursive: true });
+      await writeFile(path.join(projectRoot, "shorts", "rank-01", "clip.mp4"), Buffer.from("vertical clip"));
+      await writeFile(path.join(projectRoot, "edit-plan.json"), "private plan");
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
+
+      const clipResponse = await request(app).get(`/api/projects/${projectId}/vertical-package/clips/rank-01/clip.mp4`);
+      const traversalResponse = await request(app).get(`/api/projects/${projectId}/vertical-package/clips/%2e%2e/clip.mp4`);
+
+      expect(clipResponse.status).toBe(200);
+      expect(clipResponse.body).toEqual(Buffer.from("vertical clip"));
+      expect(traversalResponse.status).toBe(404);
+    });
+  });
+
   it("rejects invalid export settings", async () => {
     await withTempDir("ai-editor-route-", async (dir) => {
       const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
@@ -677,7 +879,15 @@ describe("project routes", () => {
       expect(response.status).toBe(201);
       expect(response.body.projectId).toMatch(/^project_/);
       expect(response.body.job.status).toBe("queued");
+      expect(response.body.job).not.toHaveProperty("sourcePath");
+      expect(response.body.job).not.toHaveProperty("outputPath");
+      expect(response.body.job).not.toHaveProperty("planPath");
       expect(jobs.get(response.body.job.id)?.projectId).toBe(response.body.projectId);
+
+      const jobResponse = await request(app).get(`/api/projects/jobs/${response.body.job.id}`);
+      expect(jobResponse.body.job).not.toHaveProperty("sourcePath");
+      expect(jobResponse.body.job).not.toHaveProperty("outputPath");
+      expect(jobResponse.body.job).not.toHaveProperty("planPath");
     });
   });
 
@@ -1610,6 +1820,94 @@ describe("project routes", () => {
     });
   });
 
+  it("publishes generated vertical clips to YouTube Shorts", async () => {
+    await withTempDir("ai-editor-route-youtube-shorts-publish-", async (dir) => {
+      vi.stubEnv("YOUTUBE_CLIENT_ID", "client-id");
+      vi.stubEnv("YOUTUBE_CLIENT_SECRET", "client-secret");
+      vi.stubEnv("YOUTUBE_REFRESH_TOKEN", "refresh-token");
+
+      const projectId = "project_123";
+      const projectRoot = path.join(dir, projectId);
+      await mkdir(path.join(projectRoot, "shorts", "rank-01"), { recursive: true });
+      await mkdir(path.join(projectRoot, "shorts", "rank-02"), { recursive: true });
+      await writeFile(path.join(projectRoot, "shorts", "rank-01", "clip.mp4"), Buffer.from("short 1"));
+      await writeFile(path.join(projectRoot, "shorts", "rank-02", "clip.mp4"), Buffer.from("short 2"));
+      await writeFile(path.join(projectRoot, "shorts", "rank-01", "youtube-shorts-payload.json"), JSON.stringify({
+        video: "shorts/rank-01/clip.mp4",
+        title: "Short 1",
+        description: "Descricao 1",
+        hashtags: ["#shorts", "#flowcut"],
+        privacyStatus: "private"
+      }));
+      await writeFile(path.join(projectRoot, "shorts", "rank-02", "youtube-shorts-payload.json"), JSON.stringify({
+        video: "shorts/rank-02/clip.mp4",
+        title: "Short 2",
+        description: "Descricao 2",
+        hashtags: ["#shorts"],
+        privacyStatus: "private"
+      }));
+      await writeFile(path.join(projectRoot, "vertical-package.json"), JSON.stringify({
+        projectId,
+        taskId: "task-123",
+        status: "ready",
+        clips: [
+          { id: "clip-1", rank: 1, payloads: { youtubeShorts: "shorts/rank-01/youtube-shorts-payload.json" } },
+          { id: "clip-2", rank: 2, payloads: { youtubeShorts: "shorts/rank-02/youtube-shorts-payload.json" } }
+        ],
+        warnings: []
+      }));
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "access-1" }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, {
+          status: 200,
+          headers: { location: "https://upload.youtube.test/short-1" }
+        }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ id: "yt-short-1" }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "access-2" }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, {
+          status: 200,
+          headers: { location: "https://upload.youtube.test/short-2" }
+        }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ id: "yt-short-2" }), { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
+
+      const response = await request(app)
+        .post(`/api/projects/${projectId}/vertical-package/youtube-shorts-publish`)
+        .send({ privacyStatus: "public" });
+
+      expect(response.status).toBe(200);
+      expect(response.body.publications).toEqual([
+        {
+          clipId: "clip-1",
+          rank: 1,
+          externalId: "yt-short-1",
+          url: "https://www.youtube.com/watch?v=yt-short-1",
+          status: "published"
+        },
+        {
+          clipId: "clip-2",
+          rank: 2,
+          externalId: "yt-short-2",
+          url: "https://www.youtube.com/watch?v=yt-short-2",
+          status: "published"
+        }
+      ]);
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toMatchObject({
+        snippet: {
+          title: "Short 1",
+          tags: ["shorts", "flowcut"]
+        },
+        status: {
+          privacyStatus: "public"
+        }
+      });
+      const ledger = JSON.parse(await readFile(path.join(projectRoot, "vertical-youtube-shorts-publications.json"), "utf8"));
+      expect(ledger.publications).toHaveLength(2);
+    });
+  });
+
   it("downloads a final package with video, selected thumbnail, and YouTube metadata", async () => {
     await withTempDir("ai-editor-route-final-package-", async (dir) => {
       const projectId = "project_123";
@@ -1673,6 +1971,24 @@ describe("project routes", () => {
       expect(zipText).toContain("Titulo editado");
       expect(zipText).toContain("Descricao editada");
       expect(zipText).toContain("00:00 Inicio");
+    });
+  });
+
+  it("does not package a temporary export that is still rendering", async () => {
+    await withTempDir("ai-editor-route-final-package-temp-", async (dir) => {
+      const projectId = "project_123";
+      const projectRoot = path.join(dir, projectId);
+      const rendersRoot = path.join(projectRoot, "renders");
+      await mkdir(rendersRoot, { recursive: true });
+      await writeFile(path.join(rendersRoot, ".youtube-edit.job_123.tmp.mp4"), Buffer.from("partial export"));
+      const app = createApp({ workspaceRoot: dir, jobs: createJobStore(), runJobs: false });
+
+      const response = await request(app)
+        .post(`/api/projects/${projectId}/final-package`)
+        .send({ title: "Titulo", description: "Descricao" });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error).toBe("Gere o export final antes de baixar o pacote.");
     });
   });
 

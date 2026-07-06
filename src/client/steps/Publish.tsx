@@ -1,9 +1,10 @@
 import { AlertTriangle, Calendar, Check, Download, PlayCircle, Upload } from "lucide-react";
-import type { EditPlanSummary, ProjectJob, YoutubePackageSummary } from "../api";
+import type { EditPlanSummary, ProjectJob, VerticalPackageSummary, YoutubePackageSummary } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
 
 type PublishProps = {
   youtubePackageSummary: YoutubePackageSummary | null;
+  verticalPackageSummary?: VerticalPackageSummary | null;
   editPlan: EditPlanSummary | null;
   exportJob: ProjectJob | null;
   isExporting: boolean;
@@ -16,6 +17,7 @@ type PublishProps = {
   onStartFinalExport: () => void;
   onDownloadFinalPackage: () => void;
   onPublishYoutube: () => void;
+  onPublishYoutubeShorts?: () => void;
   onConnectYoutube: () => void;
 };
 
@@ -33,6 +35,7 @@ type ChecklistItem = {
 
 export function Publish({
   youtubePackageSummary,
+  verticalPackageSummary = null,
   editPlan,
   exportJob,
   isExporting,
@@ -45,18 +48,28 @@ export function Publish({
   onStartFinalExport,
   onDownloadFinalPackage,
   onPublishYoutube,
+  onPublishYoutubeShorts,
   onConnectYoutube
 }: PublishProps) {
-  const hasPackage = youtubePackageSummary?.status === "ready";
+  const isVerticalFlow = Boolean(editPlan && editPlan.source.height > editPlan.source.width);
+  const hasVerticalPackage = verticalPackageSummary?.status === "ready" && verticalPackageSummary.clips.length > 0;
+  const hasPackage = isVerticalFlow ? hasVerticalPackage : youtubePackageSummary?.status === "ready";
   const hasCaptions = Boolean(editPlan?.captions.length);
   const hasExport = Boolean(exportJob?.outputUrl);
+  const primaryAction = isVerticalFlow ? onPublishYoutubeShorts ?? onPublishYoutube : hasExport ? onPublishYoutube : onStartFinalExport;
 
-  const checklist: ChecklistItem[] = [
-    { ok: Boolean(editPlan?.source), label: "Vídeo pronto (1080p)" },
-    { ok: hasCaptions, label: "Transcrição gerada" },
-    { ok: Boolean(youtubePackageSummary?.title), label: "Título e descrição" },
-    { ok: true, label: `Visibilidade: ${VISIBILITY_LABELS[publicationVisibility]}`, warn: true }
-  ];
+  const checklist: ChecklistItem[] = isVerticalFlow
+    ? [
+        { ok: Boolean(editPlan?.source), label: "Vídeo vertical pronto" },
+        { ok: hasVerticalPackage, label: `${verticalPackageSummary?.clips.length ?? 0} Shorts/Reels gerados` },
+        { ok: true, label: `Visibilidade: ${VISIBILITY_LABELS[publicationVisibility]}`, warn: true }
+      ]
+    : [
+        { ok: Boolean(editPlan?.source), label: "Vídeo pronto (1080p)" },
+        { ok: hasCaptions, label: "Transcrição gerada" },
+        { ok: Boolean(youtubePackageSummary?.title), label: "Título e descrição" },
+        { ok: true, label: `Visibilidade: ${VISIBILITY_LABELS[publicationVisibility]}`, warn: true }
+      ];
 
   return (
     <div>
@@ -64,10 +77,12 @@ export function Publish({
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 700, color: "#e8e4de", letterSpacing: "-0.3px" }}>
-            {hasExport ? "Pronto para publicar" : "Publicar"}
+            {isVerticalFlow ? "Publicar Shorts" : hasExport ? "Pronto para publicar" : "Publicar"}
           </div>
           <div style={{ fontSize: 12, color: "#484845", marginTop: 3 }}>
-            {hasExport ? "Export final gerado · revise antes de enviar" : "Gere o export final antes de publicar"}
+            {isVerticalFlow
+              ? "Envia os cortes verticais gerados pelo SupoClip"
+              : hasExport ? "Export final gerado · revise antes de enviar" : "Gere o export final antes de publicar"}
           </div>
         </div>
         <StatusBadge variant={hasPackage ? "ready" : "waiting"} label={hasPackage ? "✓ Tudo pronto" : "Aguardando"} />
@@ -169,7 +184,7 @@ export function Publish({
       ) : null}
       <button
         type="button"
-        onClick={hasExport ? onPublishYoutube : onStartFinalExport}
+        onClick={primaryAction}
         disabled={isExporting || isPublishingYoutube || !hasPackage}
         style={{
           width: "100%", padding: "11px",
@@ -188,7 +203,9 @@ export function Publish({
           ? "Publicando…"
           : isExporting
             ? "Gerando export…"
-            : hasExport
+            : isVerticalFlow
+              ? "Publicar Shorts"
+              : hasExport
               ? "Publicar no YouTube"
               : "Gerar export final"}
       </button>
@@ -196,6 +213,8 @@ export function Publish({
       <div style={{ fontSize: 10, color: "#3a3a38", textAlign: "center", lineHeight: 1.5 }}>
         {youtubePublicationUrl
           ? <a href={youtubePublicationUrl} target="_blank" rel="noreferrer" style={{ color: "var(--shell-gold)" }}>Publicado no YouTube</a>
+          : isVerticalFlow
+            ? "Publica os clips verticais diretamente como vídeos elegíveis para Shorts."
           : hasExport
             ? "Export pronto. Clique para enviar direto ao YouTube."
           : "Revise thumbnail, título e descrição antes de gerar o export."}

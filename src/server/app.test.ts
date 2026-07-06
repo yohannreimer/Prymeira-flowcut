@@ -19,11 +19,71 @@ describe("createApp", () => {
     expect(() => createApp()).toThrow("PRYMEIRA_ACCOUNT_API_URL is required in production.");
   });
 
+  it("does not require Prymeira Account in production when local mode is enabled", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("PRYMEIRA_ACCOUNT_API_URL", "");
+    vi.stubEnv("FLOWCUT_LOCAL_MODE", "true");
+
+    expect(() => createApp({ runJobs: false })).not.toThrow();
+  });
+
   it("returns health status", async () => {
     await request(createApp())
       .get("/api/health")
       .expect(200)
       .expect({ ok: true });
+  });
+
+  it("rejects requests from disallowed browser origins", async () => {
+    await request(createApp({
+      runJobs: false,
+      allowedOrigins: ["https://flowcut.prymeiradigital.com.br"]
+    }))
+      .post("/api/youtube/oauth/start")
+      .set("Origin", "https://evil.example")
+      .send({})
+      .expect(403)
+      .expect({
+        error: {
+          code: "origin_not_allowed",
+          message: "Request origin is not allowed."
+        }
+      });
+  });
+
+  it("answers CORS preflight for allowed origins", async () => {
+    const response = await request(createApp({
+      runJobs: false,
+      allowedOrigins: ["https://flowcut.prymeiradigital.com.br"]
+    }))
+      .options("/api/config")
+      .set("Origin", "https://flowcut.prymeiradigital.com.br")
+      .expect(204);
+
+    expect(response.headers["access-control-allow-origin"]).toBe("https://flowcut.prymeiradigital.com.br");
+    expect(response.headers["access-control-allow-headers"]).toContain("authorization");
+  });
+
+  it("rate limits repeated requests from the same client", async () => {
+    const app = createApp({
+      runJobs: false,
+      rateLimit: {
+        windowMs: 60_000,
+        max: 2
+      }
+    });
+
+    await request(app).get("/api/health").expect(200);
+    await request(app).get("/api/health").expect(200);
+    await request(app)
+      .get("/api/health")
+      .expect(429)
+      .expect({
+        error: {
+          code: "rate_limited",
+          message: "Too many requests. Try again later."
+        }
+      });
   });
 
   it("exposes the upload size limit to the client", async () => {
@@ -51,6 +111,34 @@ describe("createApp", () => {
       .get("/api/config")
       .expect(200)
       .expect({ uploadFileSizeLimitBytes: 1234, directUploadEnabled: true });
+  });
+
+  it("ignores Prymeira tenant auth from env when local mode is enabled", async () => {
+    vi.stubEnv("FLOWCUT_LOCAL_MODE", "true");
+    vi.stubEnv("PRYMEIRA_ACCOUNT_API_URL", "https://account-api.test");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await request(createApp({ workspaceRoot: "unused", runJobs: false }))
+      .get("/api/config")
+      .expect(200)
+      .expect({ uploadFileSizeLimitBytes: 5368709120, directUploadEnabled: false });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("disables default R2 direct upload storage in local mode", async () => {
+    vi.stubEnv("FLOWCUT_LOCAL_MODE", "true");
+    vi.stubEnv("R2_ACCESS_KEY_ID", "access-key");
+    vi.stubEnv("R2_SECRET_ACCESS_KEY", "secret-key");
+    vi.stubEnv("R2_ENDPOINT", "https://account.r2.cloudflarestorage.com");
+    vi.stubEnv("R2_BUCKET", "mediafactory-temp");
+    vi.stubEnv("R2_PUBLIC_BASE_URL", "https://pub-example.r2.dev");
+
+    await request(createApp({ workspaceRoot: "unused", runJobs: false }))
+      .get("/api/config")
+      .expect(200)
+      .expect({ uploadFileSizeLimitBytes: 5368709120, directUploadEnabled: false });
   });
 
   it("starts project retention cleanup with the configured retention window", () => {

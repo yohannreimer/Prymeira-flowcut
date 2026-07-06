@@ -1,5 +1,3 @@
-version: "3.7"
-
 services:
   flowcut_backend:
     image: ghcr.io/${GHCR_OWNER:-yohannreimer}/prymeira-flowcut-backend:${IMAGE_TAG:-latest}
@@ -9,6 +7,9 @@ services:
       AI_EDITOR_WORKSPACE: /app/workspace
       AI_EDITOR_UPLOAD_LIMIT_BYTES: ${AI_EDITOR_UPLOAD_LIMIT_BYTES:-5368709120}
       AI_EDITOR_PROJECT_RETENTION_MINUTES: ${AI_EDITOR_PROJECT_RETENTION_MINUTES:-30}
+      FLOWCUT_PUBLIC_APP_URL: ${FLOWCUT_PUBLIC_APP_URL:-https://flowcut.prymeiradigital.com.br}
+      FLOWCUT_ALLOWED_ORIGINS: ${FLOWCUT_ALLOWED_ORIGINS:-https://flowcut.prymeiradigital.com.br}
+      FLOWCUT_JSON_BODY_LIMIT_BYTES: ${FLOWCUT_JSON_BODY_LIMIT_BYTES:-1048576}
       PRYMEIRA_ACCOUNT_API_URL: https://hub.prymeiradigital.com.br/api
       PRYMEIRA_PRODUCT_KEY: media
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -28,6 +29,17 @@ services:
       R2_BUCKET: ${R2_BUCKET:-}
       R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
       BACKEND_AUTH_SECRET: ${BACKEND_AUTH_SECRET:-}
+      SUPOCLIP_ENABLED: ${SUPOCLIP_ENABLED:-false}
+      SUPOCLIP_BACKEND_URL: ${SUPOCLIP_BACKEND_URL:-http://host.docker.internal:8000}
+      SUPOCLIP_USER_ID: ${SUPOCLIP_USER_ID:-media-factory}
+      SUPOCLIP_AUTH_SECRET: ${SUPOCLIP_AUTH_SECRET:-}
+      SUPOCLIP_CAPTION_TEMPLATE: ${SUPOCLIP_CAPTION_TEMPLATE:-default}
+      SUPOCLIP_PROCESSING_MODE: ${SUPOCLIP_PROCESSING_MODE:-fast}
+      SUPOCLIP_OUTPUT_FORMAT: ${SUPOCLIP_OUTPUT_FORMAT:-vertical}
+      SUPOCLIP_ADD_SUBTITLES: ${SUPOCLIP_ADD_SUBTITLES:-true}
+      SUPOCLIP_CUT_LONG_PAUSES: ${SUPOCLIP_CUT_LONG_PAUSES:-true}
+      SUPOCLIP_MAX_CLIPS: ${SUPOCLIP_MAX_CLIPS:-5}
+      SUPOCLIP_MIN_CLIP_DURATION_SEC: ${SUPOCLIP_MIN_CLIP_DURATION_SEC:-12}
       MEDIA_FACTORY_MUSIC_DIR: ${MEDIA_FACTORY_MUSIC_DIR:-}
       MEDIA_FACTORY_MUSIC_VOLUME: ${MEDIA_FACTORY_MUSIC_VOLUME:-0.08}
     networks:
@@ -79,7 +91,7 @@ services:
         - traefik.http.routers.flowcut.entrypoints=websecure
         - traefik.http.routers.flowcut.tls.certresolver=letsencryptresolver
         - traefik.http.routers.flowcut.service=flowcut
-        - traefik.http.services.flowcut.loadbalancer.server.port=80
+        - traefik.http.services.flowcut.loadbalancer.server.port=8080
 
 volumes:
   flowcut_workspace:

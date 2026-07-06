@@ -3,7 +3,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { withTempDir } from "../../test/fixtures";
 import { createInitialManifest, writeManifest } from "./manifest";
+import { publishInstagramReel as defaultPublishInstagramReel } from "./instagram-publisher";
 import { publishApprovedPackages, dryRunApprovedPackages } from "./publisher";
+import { uploadFileToR2 as defaultUploadFileToR2 } from "./r2-storage";
 
 async function createApprovedHorizontalPackage(rootDir: string) {
   const packageDir = path.join(rootDir, "Saida", "approved", "2026-05-12 - Horizontal - Aula");
@@ -62,7 +64,11 @@ async function createApprovedVerticalPackage(rootDir: string, clipCount = 1) {
       hashtags: ["#shorts", "#mediafactory"],
       privacyStatus: "private"
     }));
-    await fs.writeFile(path.join(packageDir, clipDir, "instagram-reels-payload.json"), "{}");
+    await fs.writeFile(path.join(packageDir, clipDir, "instagram-reels-payload.json"), JSON.stringify({
+      video: `${clipDir}/clip.mp4`,
+      caption: `Reel ${index + 1}`,
+      hashtags: ["#reels", "#mediafactory"]
+    }));
     await fs.writeFile(path.join(packageDir, clipDir, "tiktok-payload.json"), "{}");
   }
 
@@ -541,6 +547,228 @@ describe("publishApprovedPackages", () => {
       const ledger = JSON.parse(await fs.readFile(path.join(rootDir, "Logs", "youtube-shorts-ledger.json"), "utf8"));
       expect(ledger.entries).toHaveLength(2);
       expect(ledger.entries.map((entry: { title: string }) => entry.title)).toEqual(["Short 1", "Short 2"]);
+    });
+  });
+
+  it("publishes approved Instagram Reels in live mode through R2 and writes the local ledger", async () => {
+    await withTempDir("media-factory-publisher-instagram-live-", async (rootDir) => {
+      await createApprovedVerticalPackage(rootDir, 2);
+      const progressLines: string[] = [];
+      const uploadedInputs: Array<{ filePath: string; objectKey: string }> = [];
+      const reelInputs: Array<{ videoUrl: string; caption: string }> = [];
+      const uploadFileToR2: typeof defaultUploadFileToR2 = async (input) => {
+        uploadedInputs.push({ filePath: input.filePath, objectKey: input.objectKey });
+        return {
+          objectKey: input.objectKey,
+          publicUrl: `https://pub-example.r2.dev/${input.objectKey}`
+        };
+      };
+      const publishInstagramReel: typeof defaultPublishInstagramReel = async (input) => {
+        reelInputs.push({ videoUrl: input.videoUrl, caption: input.caption });
+        const id = `reel-${reelInputs.length}`;
+        return {
+          externalId: id,
+          containerId: `container-${reelInputs.length}`,
+          url: `https://www.instagram.com/reel/${id}/`
+        };
+      };
+
+      const result = await publishApprovedPackages({
+        rootDir,
+        publishers: {
+          youtube: "dry-run",
+          instagram: "live",
+          tiktok: "dry-run",
+          x: "dry-run",
+          spotify: "dry-run"
+        },
+        instagramCredentials: {
+          igUserId: "17841400000000000",
+          accessToken: "access-token",
+          graphApiVersion: "v24.0"
+        },
+        r2Config: {
+          accessKeyId: "access-key",
+          secretAccessKey: "secret-key",
+          endpoint: "https://account.r2.cloudflarestorage.com",
+          bucket: "mediafactory-reels-temp",
+          publicBaseUrl: "https://pub-example.r2.dev"
+        },
+        deps: { uploadFileToR2, publishInstagramReel },
+        now: new Date("2026-05-12T13:00:00.000Z"),
+        progress: {
+          info: (message) => progressLines.push(message),
+          warn: (message) => progressLines.push(message),
+          poll: (message) => progressLines.push(message)
+        }
+      });
+
+      expect(result.summary).toEqual({ packages: 1, ready: 1, blocked: 0, livePublished: 1 });
+      expect(result.packages[0].items.find((item) => item.platform === "instagram")).toMatchObject({
+        mode: "live",
+        status: "published",
+        externalId: "reel-1,reel-2",
+        url: "https://www.instagram.com/reel/reel-2/"
+      });
+      expect(uploadedInputs.map((input) => input.objectKey)).toEqual([
+        "instagram/2026-05-12-shorts-corte/rank-01/clip.mp4",
+        "instagram/2026-05-12-shorts-corte/rank-02/clip.mp4"
+      ]);
+      expect(reelInputs).toEqual([
+        {
+          videoUrl: "https://pub-example.r2.dev/instagram/2026-05-12-shorts-corte/rank-01/clip.mp4",
+          caption: "Reel 1\n\n#reels #mediafactory"
+        },
+        {
+          videoUrl: "https://pub-example.r2.dev/instagram/2026-05-12-shorts-corte/rank-02/clip.mp4",
+          caption: "Reel 2\n\n#reels #mediafactory"
+        }
+      ]);
+      expect(progressLines).toContain("Instagram Reels: rank-01 publicado: https://www.instagram.com/reel/reel-1/");
+
+      const ledger = JSON.parse(await fs.readFile(path.join(rootDir, "Logs", "instagram-reels-ledger.json"), "utf8"));
+      expect(ledger.entries).toHaveLength(2);
+      expect(ledger.entries.map((entry: { externalId: string; containerId: string }) => ({
+        externalId: entry.externalId,
+        containerId: entry.containerId
+      }))).toEqual([
+        { externalId: "reel-1", containerId: "container-1" },
+        { externalId: "reel-2", containerId: "container-2" }
+      ]);
+
+      const manifest = JSON.parse(
+        await fs.readFile(path.join(rootDir, "Saida", "approved", "2026-05-12 - Shorts - Corte", "manifest.json"), "utf8")
+      );
+      expect(manifest.publishResults).toEqual([
+        {
+          platform: "instagram",
+          mode: "live",
+          status: "passed",
+          externalId: "reel-1,reel-2",
+          url: "https://www.instagram.com/reel/reel-2/",
+          retryCount: 0
+        }
+      ]);
+    });
+  });
+
+  it("skips Instagram Reels that already exist in the local ledger", async () => {
+    await withTempDir("media-factory-publisher-instagram-ledger-skip-", async (rootDir) => {
+      await createApprovedVerticalPackage(rootDir, 1);
+      await fs.mkdir(path.join(rootDir, "Logs"), { recursive: true });
+      await fs.writeFile(path.join(rootDir, "Logs", "instagram-reels-ledger.json"), `${JSON.stringify({
+        version: 1,
+        entries: [
+          {
+            clipKey: "2026-05-12 - Shorts - Corte::shorts/rank-01/instagram-reels-payload.json",
+            packageId: "2026-05-12 - Shorts - Corte",
+            clipPath: "shorts/rank-01/instagram-reels-payload.json",
+            videoPath: "shorts/rank-01/clip.mp4",
+            objectKey: "instagram/2026-05-12-shorts-corte/rank-01/clip.mp4",
+            publicUrl: "https://pub-example.r2.dev/instagram/2026-05-12-shorts-corte/rank-01/clip.mp4",
+            externalId: "already-posted",
+            containerId: "already-container",
+            url: "https://www.instagram.com/reel/already-posted/",
+            createdAt: "2026-05-12T13:00:00.000Z",
+            caption: "Reel 1"
+          }
+        ]
+      }, null, 2)}\n`);
+      const uploadFileToR2: typeof defaultUploadFileToR2 = async () => {
+        throw new Error("should not upload a reel already present in ledger");
+      };
+      const publishInstagramReel: typeof defaultPublishInstagramReel = async () => {
+        throw new Error("should not repost a reel already present in ledger");
+      };
+
+      const result = await publishApprovedPackages({
+        rootDir,
+        publishers: {
+          youtube: "dry-run",
+          instagram: "live",
+          tiktok: "dry-run",
+          x: "dry-run",
+          spotify: "dry-run"
+        },
+        instagramCredentials: {
+          igUserId: "17841400000000000",
+          accessToken: "access-token",
+          graphApiVersion: "v24.0"
+        },
+        r2Config: {
+          accessKeyId: "access-key",
+          secretAccessKey: "secret-key",
+          endpoint: "https://account.r2.cloudflarestorage.com",
+          bucket: "mediafactory-reels-temp",
+          publicBaseUrl: "https://pub-example.r2.dev"
+        },
+        deps: { uploadFileToR2, publishInstagramReel },
+        now: new Date("2026-05-12T13:00:00.000Z")
+      });
+
+      expect(result.summary).toEqual({ packages: 1, ready: 1, blocked: 0, livePublished: 0 });
+    });
+  });
+
+  it("blocks Instagram live when Instagram credentials are missing", async () => {
+    await withTempDir("media-factory-publisher-instagram-missing-credentials-", async (rootDir) => {
+      await createApprovedVerticalPackage(rootDir, 1);
+
+      const result = await publishApprovedPackages({
+        rootDir,
+        publishers: {
+          youtube: "dry-run",
+          instagram: "live",
+          tiktok: "dry-run",
+          x: "dry-run",
+          spotify: "dry-run"
+        },
+        instagramCredentials: null,
+        r2Config: {
+          accessKeyId: "access-key",
+          secretAccessKey: "secret-key",
+          endpoint: "https://account.r2.cloudflarestorage.com",
+          bucket: "mediafactory-reels-temp",
+          publicBaseUrl: "https://pub-example.r2.dev"
+        },
+        now: new Date("2026-05-12T13:00:00.000Z")
+      });
+
+      expect(result.summary).toEqual({ packages: 1, ready: 0, blocked: 1, livePublished: 0 });
+      expect(result.packages[0].items.find((item) => item.platform === "instagram")).toMatchObject({
+        status: "blocked",
+        missing: ["INSTAGRAM_IG_USER_ID", "INSTAGRAM_ACCESS_TOKEN"]
+      });
+    });
+  });
+
+  it("blocks Instagram live when R2 configuration is missing", async () => {
+    await withTempDir("media-factory-publisher-instagram-missing-r2-", async (rootDir) => {
+      await createApprovedVerticalPackage(rootDir, 1);
+
+      const result = await publishApprovedPackages({
+        rootDir,
+        publishers: {
+          youtube: "dry-run",
+          instagram: "live",
+          tiktok: "dry-run",
+          x: "dry-run",
+          spotify: "dry-run"
+        },
+        instagramCredentials: {
+          igUserId: "17841400000000000",
+          accessToken: "access-token",
+          graphApiVersion: "v24.0"
+        },
+        r2Config: null,
+        now: new Date("2026-05-12T13:00:00.000Z")
+      });
+
+      expect(result.summary).toEqual({ packages: 1, ready: 0, blocked: 1, livePublished: 0 });
+      expect(result.packages[0].items.find((item) => item.platform === "instagram")).toMatchObject({
+        status: "blocked",
+        missing: ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT", "R2_BUCKET", "R2_PUBLIC_BASE_URL"]
+      });
     });
   });
 });

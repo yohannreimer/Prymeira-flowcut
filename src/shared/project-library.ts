@@ -3,7 +3,7 @@ import path from "node:path";
 import { editPlanSchema, type EditPlan } from "./edit-plan";
 
 export type ProjectOrientation = "vertical" | "horizontal" | "original";
-export type ProjectLibraryStatus = "missing_plan" | "invalid_plan" | "planned" | "captioned" | "music" | "rendered";
+export type ProjectLibraryStatus = "missing_plan" | "invalid_plan" | "planned" | "captioned" | "music" | "rendered" | "processing" | "failed";
 export type ProjectVersionKind = "rough_cut" | "final_export" | "captions_file" | "music" | "captions_plan";
 
 export type ProjectVersion = {
@@ -28,9 +28,11 @@ export type ProjectLibraryItem = {
   versions: ProjectVersion[];
   outputUrl: string | null;
   finalExportUrl: string | null;
+  error: string | null;
 };
 
 const PROJECT_ID_PATTERN = /^project_[A-Za-z0-9_-]+$/;
+const RECENT_PARTIAL_RENDER_MS = 5 * 60_000;
 
 export async function listProjectLibrary(workspaceRoot: string): Promise<ProjectLibraryItem[]> {
   const entries = await readdir(workspaceRoot, { withFileTypes: true }).catch((error: unknown) => {
@@ -67,7 +69,8 @@ async function readProjectLibraryItem(workspaceRoot: string, projectId: string):
       counts: { cuts: 0, captions: 0 },
       versions: [],
       outputUrl: null,
-      finalExportUrl: null
+      finalExportUrl: null,
+      error: null
     };
   }
 
@@ -85,7 +88,8 @@ async function readProjectLibraryItem(workspaceRoot: string, projectId: string):
       counts: { cuts: 0, captions: 0 },
       versions: [],
       outputUrl: null,
-      finalExportUrl: null
+      finalExportUrl: null,
+      error: "Plano do projeto inválido."
     };
   }
 
@@ -99,6 +103,8 @@ async function readProjectLibraryItem(workspaceRoot: string, projectId: string):
     finalExport ? stat(finalExport.filePath).catch(() => null) : null
   ]);
   const versions = buildVersions(plan, roughCutStats?.mtime ?? null, finalExportStats?.mtime ?? null, captionsStats?.mtime ?? null);
+  const status = getStatus(plan, roughCutStats?.mtime ?? null);
+  const error = getProjectError(plan, roughCutStats?.mtime ?? null);
   const updatedAt = newestDate([
     projectStats.mtime,
     planStats.mtime,
@@ -115,14 +121,15 @@ async function readProjectLibraryItem(workspaceRoot: string, projectId: string):
     updatedAt,
     durationSec: plan.source.durationSec,
     orientation: getOrientation(plan),
-    status: getStatus(plan, Boolean(roughCutStats)),
+    status,
     counts: {
       cuts: plan.removed.length,
       captions: plan.captions.length
     },
     versions,
-    outputUrl: roughCutStats ? `/media/${encodeURIComponent(projectId)}/rough-cut.mp4` : null,
-    finalExportUrl: finalExport ? `/media/${encodeURIComponent(projectId)}/${encodeURIComponent(finalExport.fileName)}` : null
+    outputUrl: status === "rendered" && roughCutStats ? `/media/${encodeURIComponent(projectId)}/rough-cut.mp4` : null,
+    finalExportUrl: finalExport ? `/media/${encodeURIComponent(projectId)}/${encodeURIComponent(finalExport.fileName)}` : null,
+    error
   };
 }
 
@@ -162,11 +169,36 @@ function getOrientation(plan: EditPlan): ProjectOrientation {
   return "original";
 }
 
-function getStatus(plan: EditPlan, hasRoughCut: boolean): ProjectLibraryStatus {
+function getStatus(plan: EditPlan, roughCutMtime: Date | null): ProjectLibraryStatus {
+  const hasRoughCut = roughCutMtime !== null;
+  if (plan.qa.status === "failed") return "failed";
+  if (hasRoughCut && plan.qa.status === "not_run" && isRecentPartialRender(roughCutMtime)) return "processing";
+  if (hasRoughCut && plan.qa.status === "not_run") return "failed";
   if (hasRoughCut) return "rendered";
   if (plan.audio.music) return "music";
   if (plan.captions.length > 0) return "captioned";
   return "planned";
+}
+
+function getProjectError(plan: EditPlan, roughCutMtime: Date | null): string | null {
+  const hasRoughCut = roughCutMtime !== null;
+  if (plan.qa.status === "failed") {
+    return plan.qa.warnings[0] ?? "Processamento falhou.";
+  }
+
+  if (hasRoughCut && plan.qa.status === "not_run" && isRecentPartialRender(roughCutMtime)) {
+    return null;
+  }
+
+  if (hasRoughCut && plan.qa.status === "not_run") {
+    return "Render interrompido antes da verificação de qualidade.";
+  }
+
+  return null;
+}
+
+function isRecentPartialRender(roughCutMtime: Date | null) {
+  return roughCutMtime !== null && Date.now() - roughCutMtime.getTime() < RECENT_PARTIAL_RENDER_MS;
 }
 
 function newestDate(dates: Array<Date | null>) {

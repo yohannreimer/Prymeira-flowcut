@@ -51,13 +51,13 @@ AI_EDITOR_WORKSPACE=workspace
 Add a package script:
 
 ```json
-"dev:local": "FLOWCUT_LOCAL_MODE=true VITE_FLOWCUT_LOCAL_MODE=true PRYMEIRA_ACCOUNT_API_URL= PORT=4317 concurrently -k \"vite --host 0.0.0.0 --port 5173\" \"tsx watch src/server/index.ts\""
+"dev:local": "FLOWCUT_LOCAL_MODE=true VITE_FLOWCUT_LOCAL_MODE=true PRYMEIRA_ACCOUNT_API_URL= PORT=4327 AI_EDITOR_API_PROXY=http://localhost:4327 concurrently -k \"vite --host 127.0.0.1 --port 5182 --strictPort\" \"tsx watch src/server/index.ts\""
 ```
 
 The exact script may preserve the repo's existing command style, but it must guarantee:
 
-- API on port `4317`;
-- Vite on port `5173`;
+- API on port `4327`;
+- Vite on port `5182`;
 - local mode env set for both client and server;
 - no required Clerk, Prymeira Account, or R2 env.
 

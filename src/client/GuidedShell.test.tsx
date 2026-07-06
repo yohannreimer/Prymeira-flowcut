@@ -141,6 +141,13 @@ describe("buildSidebarSteps", () => {
     expect(steps[4].status).toBe("active");
   });
 
+  it("does not require captions for a ready vertical SupoClip package", () => {
+    const steps = buildSidebarSteps(null, null, false, true, false, null, false, false, true, false, "vertical");
+    expect(steps[2]).toMatchObject({ label: "Revisão", status: "done" });
+    expect(steps[3]).toMatchObject({ label: "Shorts/Reels", status: "done" });
+    expect(steps[4]).toMatchObject({ status: "active" });
+  });
+
   it("marks step 5 locked when package is not ready", () => {
     const steps = buildSidebarSteps(null, null, false, true, false, null, true, false, false, false);
     expect(steps[4].status).toBe("locked");

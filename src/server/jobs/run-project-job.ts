@@ -9,6 +9,7 @@ import { runBasicQa } from "../qa/basic-qa";
 import { renderRoughCut } from "../render/render-rough-cut";
 import type { ProjectWorkspace } from "../workspace";
 import type { JobStore } from "./job-store";
+import { runVerticalProjectJob as defaultRunVerticalProjectJob, type RunVerticalProjectJobInput } from "./run-vertical-project-job";
 
 export const DEFAULT_SILENCE_NOISE_DB = -35;
 export const DEFAULT_SILENCE_MIN_DURATION_SEC = 0.7;
@@ -21,6 +22,7 @@ export type RunProjectJobDeps = {
   createEditPlanFromSilences?: typeof createEditPlanFromSilences;
   renderRoughCut?: typeof renderRoughCut;
   runBasicQa?: typeof runBasicQa;
+  runVerticalProjectJob?: (input: RunVerticalProjectJobInput) => Promise<void>;
   now?: () => Date;
 };
 
@@ -81,6 +83,17 @@ export async function runProjectJob(input: RunProjectJobInput, deps: RunProjectJ
     activeStage = "probe";
     input.jobs.update(input.jobId, { status: "running", stage: "probe", message: "Reading media metadata" });
     const metadata = await probe(input.sourcePath);
+    if (metadata.height > metadata.width) {
+      const runVerticalProjectJob = deps.runVerticalProjectJob ?? defaultRunVerticalProjectJob;
+      await runVerticalProjectJob({
+        jobId: input.jobId,
+        workspace: input.workspace,
+        sourcePath: input.sourcePath,
+        jobs: input.jobs,
+        metadata
+      });
+      return;
+    }
 
     let silences: SilenceInterval[] = [];
     if (metadata.hasAudio) {
@@ -142,14 +155,14 @@ export async function runProjectJob(input: RunProjectJobInput, deps: RunProjectJ
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    if (plan && qaStarted) {
+    if (plan) {
       try {
         await writePlanWithQa(plan, input.workspace.planPath, {
           status: "failed",
-          warnings: [`QA failed to complete: ${message}`]
+          warnings: [qaStarted ? `QA failed to complete: ${message}` : `Render failed during ${activeStage}: ${message}`]
         });
       } catch {
-        // Preserve job failure reporting even if the best-effort QA plan update fails.
+        // Preserve job failure reporting even if the best-effort plan update fails.
       }
     }
 
@@ -157,6 +170,7 @@ export async function runProjectJob(input: RunProjectJobInput, deps: RunProjectJ
       status: "failed",
       stage: activeStage,
       message: "Project job failed",
+      planPath: plan ? input.workspace.planPath : undefined,
       error: message
     });
   }

@@ -7,6 +7,10 @@ describe("getConfig", () => {
   const originalPrymeiraAccountApiUrl = process.env.PRYMEIRA_ACCOUNT_API_URL;
   const originalPrymeiraProductKey = process.env.PRYMEIRA_PRODUCT_KEY;
   const originalProjectRetentionMinutes = process.env.AI_EDITOR_PROJECT_RETENTION_MINUTES;
+  const originalLocalMode = process.env.FLOWCUT_LOCAL_MODE;
+  const originalAllowedOrigins = process.env.FLOWCUT_ALLOWED_ORIGINS;
+  const originalPublicAppUrl = process.env.FLOWCUT_PUBLIC_APP_URL;
+  const originalJsonBodyLimitBytes = process.env.FLOWCUT_JSON_BODY_LIMIT_BYTES;
 
   afterEach(() => {
     if (originalWorkspace === undefined) {
@@ -28,6 +32,26 @@ describe("getConfig", () => {
       delete process.env.AI_EDITOR_PROJECT_RETENTION_MINUTES;
     } else {
       process.env.AI_EDITOR_PROJECT_RETENTION_MINUTES = originalProjectRetentionMinutes;
+    }
+    if (originalLocalMode === undefined) {
+      delete process.env.FLOWCUT_LOCAL_MODE;
+    } else {
+      process.env.FLOWCUT_LOCAL_MODE = originalLocalMode;
+    }
+    if (originalAllowedOrigins === undefined) {
+      delete process.env.FLOWCUT_ALLOWED_ORIGINS;
+    } else {
+      process.env.FLOWCUT_ALLOWED_ORIGINS = originalAllowedOrigins;
+    }
+    if (originalPublicAppUrl === undefined) {
+      delete process.env.FLOWCUT_PUBLIC_APP_URL;
+    } else {
+      process.env.FLOWCUT_PUBLIC_APP_URL = originalPublicAppUrl;
+    }
+    if (originalJsonBodyLimitBytes === undefined) {
+      delete process.env.FLOWCUT_JSON_BODY_LIMIT_BYTES;
+    } else {
+      process.env.FLOWCUT_JSON_BODY_LIMIT_BYTES = originalJsonBodyLimitBytes;
     }
   });
 
@@ -53,6 +77,18 @@ describe("getConfig", () => {
     });
   });
 
+  it("defaults local mode to false", () => {
+    delete process.env.FLOWCUT_LOCAL_MODE;
+
+    expect(getConfig().localMode).toBe(false);
+  });
+
+  it("enables local mode from FLOWCUT_LOCAL_MODE", () => {
+    process.env.FLOWCUT_LOCAL_MODE = "true";
+
+    expect(getConfig().localMode).toBe(true);
+  });
+
   it("defaults project retention to 30 minutes", () => {
     delete process.env.AI_EDITOR_PROJECT_RETENTION_MINUTES;
 
@@ -69,5 +105,17 @@ describe("getConfig", () => {
     process.env.AI_EDITOR_PROJECT_RETENTION_MINUTES = "0";
 
     expect(() => getConfig()).toThrow("Invalid AI_EDITOR_PROJECT_RETENTION_MINUTES");
+  });
+
+  it("reads public app URL, allowed origins, and JSON body limit from env", () => {
+    process.env.FLOWCUT_PUBLIC_APP_URL = "https://flowcut.prymeiradigital.com.br/";
+    process.env.FLOWCUT_ALLOWED_ORIGINS = "https://flowcut.prymeiradigital.com.br, http://localhost:5173";
+    process.env.FLOWCUT_JSON_BODY_LIMIT_BYTES = "2048";
+
+    expect(getConfig()).toMatchObject({
+      publicAppUrl: "https://flowcut.prymeiradigital.com.br",
+      allowedOrigins: ["https://flowcut.prymeiradigital.com.br", "http://localhost:5173"],
+      jsonBodyLimitBytes: 2048
+    });
   });
 });

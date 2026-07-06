@@ -16,6 +16,18 @@ import {
   type XPublishCredentials,
   type XThreadPublishResult
 } from "./x-publisher";
+import {
+  getInstagramCredentialsFromEnv,
+  publishInstagramReel as defaultPublishInstagramReel,
+  type InstagramPublishCredentials,
+  type InstagramReelPublishResult
+} from "./instagram-publisher";
+import {
+  createR2ObjectKey,
+  getR2ConfigFromEnv,
+  uploadFileToR2 as defaultUploadFileToR2,
+  type R2Config
+} from "./r2-storage";
 
 export { getYouTubeCredentialsFromEnv };
 
@@ -79,6 +91,8 @@ export type PublishReport = {
 type PublishApprovedPackagesDeps = {
   publishYouTubeVideo?: typeof defaultPublishYouTubeVideo;
   publishXThread?: typeof defaultPublishXThread;
+  publishInstagramReel?: typeof defaultPublishInstagramReel;
+  uploadFileToR2?: typeof defaultUploadFileToR2;
 };
 
 const selectedThumbnailDir = "youtube/thumb-selected";
@@ -88,6 +102,7 @@ const youtubeShortsLedgerRelativePath = path.join("Logs", "youtube-shorts-ledger
 const youtubeShortsTimeZone = "America/Sao_Paulo";
 const youtubeShortsDailySlotHours = [12, 19] as const;
 const xThreadLedgerRelativePath = path.join("Logs", "x-thread-ledger.json");
+const instagramReelsLedgerRelativePath = path.join("Logs", "instagram-reels-ledger.json");
 
 type YouTubeShortsLedgerEntry = {
   clipKey: string;
@@ -115,6 +130,12 @@ type YouTubeShortsPayload = {
   privacyStatus?: unknown;
 };
 
+type InstagramReelsPayload = {
+  video?: unknown;
+  caption?: unknown;
+  hashtags?: unknown;
+};
+
 type XThreadLedgerEntry = {
   threadKey: string;
   packageId: string;
@@ -128,6 +149,25 @@ type XThreadLedgerEntry = {
 type XThreadLedger = {
   version: 1;
   entries: XThreadLedgerEntry[];
+};
+
+type InstagramReelsLedgerEntry = {
+  clipKey: string;
+  packageId: string;
+  clipPath: string;
+  videoPath: string;
+  objectKey: string;
+  publicUrl: string;
+  externalId: string;
+  containerId: string;
+  url?: string;
+  createdAt: string;
+  caption: string;
+};
+
+type InstagramReelsLedger = {
+  version: 1;
+  entries: InstagramReelsLedgerEntry[];
 };
 
 export async function dryRunApprovedPackages({
@@ -167,6 +207,8 @@ export async function publishApprovedPackages({
   publishers,
   youtubeCredentials = getYouTubeCredentialsFromEnv(),
   xCredentials = getXPublishCredentialsFromEnv(),
+  instagramCredentials = getInstagramCredentialsFromEnv(),
+  r2Config = getR2ConfigFromEnv(),
   deps = {},
   now = new Date(),
   progress = silentProgressReporter
@@ -175,6 +217,8 @@ export async function publishApprovedPackages({
   publishers: MediaFactoryConfig["publishers"];
   youtubeCredentials?: YouTubeOAuthCredentials | null;
   xCredentials?: XPublishCredentials | null;
+  instagramCredentials?: InstagramPublishCredentials | null;
+  r2Config?: R2Config | null;
   deps?: PublishApprovedPackagesDeps;
   now?: Date;
   progress?: ProgressReporter;
@@ -185,6 +229,8 @@ export async function publishApprovedPackages({
   });
   const publishYouTubeVideo = deps.publishYouTubeVideo ?? defaultPublishYouTubeVideo;
   const publishXThread = deps.publishXThread ?? defaultPublishXThread;
+  const publishInstagramReel = deps.publishInstagramReel ?? defaultPublishInstagramReel;
+  const uploadFileToR2 = deps.uploadFileToR2 ?? defaultUploadFileToR2;
   const packageDirs = await listApprovedPackageDirs(folders.approvedDir);
   const packages: PublishPackage[] = [];
 
@@ -197,8 +243,12 @@ export async function publishApprovedPackages({
         publishers,
         youtubeCredentials,
         xCredentials,
+        instagramCredentials,
+        r2Config,
         publishYouTubeVideo,
         publishXThread,
+        publishInstagramReel,
+        uploadFileToR2,
         progress,
         now
       })
@@ -263,8 +313,12 @@ async function publishPackage({
   publishers,
   youtubeCredentials,
   xCredentials,
+  instagramCredentials,
+  r2Config,
   publishYouTubeVideo,
   publishXThread,
+  publishInstagramReel,
+  uploadFileToR2,
   progress,
   now
 }: {
@@ -273,8 +327,12 @@ async function publishPackage({
   publishers: MediaFactoryConfig["publishers"];
   youtubeCredentials: YouTubeOAuthCredentials | null;
   xCredentials: XPublishCredentials | null;
+  instagramCredentials: InstagramPublishCredentials | null;
+  r2Config: R2Config | null;
   publishYouTubeVideo: typeof defaultPublishYouTubeVideo;
   publishXThread: typeof defaultPublishXThread;
+  publishInstagramReel: typeof defaultPublishInstagramReel;
+  uploadFileToR2: typeof defaultUploadFileToR2;
   progress: ProgressReporter;
   now: Date;
 }): Promise<PublishPackage> {
@@ -349,6 +407,58 @@ async function publishPackage({
             status: "passed",
             externalId: item.externalId,
             url: item.url,
+            retryCount: 0
+          })
+        })
+      );
+      continue;
+    }
+
+    if (item.platform === "instagram") {
+      if (!instagramCredentials) {
+        item.status = "blocked";
+        item.missing = ["INSTAGRAM_IG_USER_ID", "INSTAGRAM_ACCESS_TOKEN"];
+        progress.warn("Instagram live bloqueado: credenciais ausentes");
+        continue;
+      }
+      if (!r2Config) {
+        item.status = "blocked";
+        item.missing = ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT", "R2_BUCKET", "R2_PUBLIC_BASE_URL"];
+        progress.warn("Instagram live bloqueado: configuracao R2 ausente");
+        continue;
+      }
+
+      const results = await publishInstagramReelsFromPackage({
+        rootDir,
+        packageDir,
+        manifest,
+        credentials: instagramCredentials,
+        r2Config,
+        publishInstagramReel,
+        uploadFileToR2,
+        progress,
+        now
+      });
+      if (results.length === 0) {
+        progress.info("Instagram Reels: nenhum reel novo para publicar");
+        continue;
+      }
+
+      item.status = "published";
+      item.externalId = results.map((result) => result.externalId).join(",");
+      item.url = results[results.length - 1]?.url;
+      progress.info(`Instagram Reels publicado(s): ${results.length}`);
+
+      const freshManifest = await readManifest(manifestPath);
+      await writeManifest(
+        manifestPath,
+        updateManifest({ manifest: freshManifest, now }, {
+          publishResults: upsertPublishResult(freshManifest, {
+            platform: "instagram",
+            mode: "live",
+            status: "passed",
+            externalId: item.externalId,
+            ...(item.url ? { url: item.url } : {}),
             retryCount: 0
           })
         })
@@ -668,6 +778,89 @@ async function publishYouTubeShortsFromPackage({
   return results;
 }
 
+async function publishInstagramReelsFromPackage({
+  rootDir,
+  packageDir,
+  manifest,
+  credentials,
+  r2Config,
+  publishInstagramReel,
+  uploadFileToR2,
+  progress,
+  now
+}: {
+  rootDir: string;
+  packageDir: string;
+  manifest: MediaFactoryManifest;
+  credentials: InstagramPublishCredentials;
+  r2Config: R2Config;
+  publishInstagramReel: typeof defaultPublishInstagramReel;
+  uploadFileToR2: typeof defaultUploadFileToR2;
+  progress: ProgressReporter;
+  now: Date;
+}): Promise<InstagramReelPublishResult[]> {
+  let ledger = await readInstagramReelsLedger(rootDir);
+  const results: InstagramReelPublishResult[] = [];
+
+  for (const clipPath of getNestedStringArray(manifest.publishPlan, ["instagram", "clips"])) {
+    const clipKey = getInstagramReelClipKey(manifest.id, clipPath);
+    if (ledger.entries.some((entry) => entry.clipKey === clipKey)) {
+      progress.info(`Instagram Reels: ${getShortRankLabel(clipPath)} ja estava no ledger; pulando`);
+      continue;
+    }
+
+    const payload = await readInstagramReelsPayload(path.join(packageDir, clipPath));
+    const videoPath = path.join(packageDir, payload.video);
+    const clipRank = getShortRankLabel(clipPath);
+    const objectKey = createR2ObjectKey({
+      packageId: manifest.id,
+      clipRank,
+      fileName: path.basename(payload.video)
+    });
+
+    progress.info(`Instagram Reels: subindo ${clipRank} para R2...`);
+    const uploaded = await uploadFileToR2({
+      filePath: videoPath,
+      objectKey,
+      contentType: "video/mp4",
+      config: r2Config
+    });
+
+    const caption = formatInstagramCaption(payload);
+    progress.info(`Instagram Reels: publicando ${clipRank}...`);
+    const result = await publishInstagramReel({
+      videoUrl: uploaded.publicUrl,
+      caption,
+      credentials
+    });
+
+    ledger = {
+      version: 1,
+      entries: [
+        ...ledger.entries,
+        {
+          clipKey,
+          packageId: manifest.id,
+          clipPath,
+          videoPath: payload.video,
+          objectKey: uploaded.objectKey,
+          publicUrl: uploaded.publicUrl,
+          externalId: result.externalId,
+          containerId: result.containerId,
+          ...(result.url ? { url: result.url } : {}),
+          createdAt: now.toISOString(),
+          caption
+        }
+      ]
+    };
+    await writeInstagramReelsLedger(rootDir, ledger);
+    progress.info(`Instagram Reels: ${clipRank} publicado${result.url ? `: ${result.url}` : ""}`);
+    results.push(result);
+  }
+
+  return results;
+}
+
 async function publishXThreadFromPackage({
   rootDir,
   packageDir,
@@ -775,6 +968,66 @@ async function readYouTubeShortsPayload(filePath: string): Promise<{
   }
 
   return { video, title, description, hashtags };
+}
+
+async function readInstagramReelsPayload(filePath: string): Promise<{
+  video: string;
+  caption: string;
+  hashtags: string[];
+}> {
+  const payload = JSON.parse(await fs.readFile(filePath, "utf8")) as InstagramReelsPayload;
+  const video = typeof payload.video === "string" && payload.video.trim() ? payload.video.trim() : null;
+  const caption = typeof payload.caption === "string" && payload.caption.trim() ? payload.caption.trim() : "";
+  const hashtags = Array.isArray(payload.hashtags)
+    ? payload.hashtags.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
+
+  if (!video) {
+    throw new Error(`Payload de Instagram Reels invalido: ${filePath}`);
+  }
+
+  return { video, caption, hashtags };
+}
+
+function formatInstagramCaption(payload: { caption: string; hashtags: string[] }): string {
+  const hashtags = payload.hashtags
+    .map((hashtag) => hashtag.trim())
+    .filter(Boolean)
+    .map((hashtag) => hashtag.startsWith("#") ? hashtag : `#${hashtag}`);
+  return [payload.caption.trim(), hashtags.join(" ")].filter(Boolean).join("\n\n");
+}
+
+async function readInstagramReelsLedger(rootDir: string): Promise<InstagramReelsLedger> {
+  try {
+    const raw = await fs.readFile(path.join(rootDir, instagramReelsLedgerRelativePath), "utf8");
+    const parsed = JSON.parse(raw) as Partial<InstagramReelsLedger>;
+    return {
+      version: 1,
+      entries: Array.isArray(parsed.entries) ? parsed.entries.filter(isInstagramReelsLedgerEntry) : []
+    };
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return { version: 1, entries: [] };
+    }
+    throw error;
+  }
+}
+
+async function writeInstagramReelsLedger(rootDir: string, ledger: InstagramReelsLedger): Promise<void> {
+  const ledgerPath = path.join(rootDir, instagramReelsLedgerRelativePath);
+  await fs.mkdir(path.dirname(ledgerPath), { recursive: true });
+  await fs.writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+}
+
+function isInstagramReelsLedgerEntry(value: unknown): value is InstagramReelsLedgerEntry {
+  return typeof value === "object"
+    && value !== null
+    && typeof (value as InstagramReelsLedgerEntry).clipKey === "string"
+    && typeof (value as InstagramReelsLedgerEntry).externalId === "string";
+}
+
+function getInstagramReelClipKey(packageId: string, clipPath: string): string {
+  return `${packageId}::${clipPath}`;
 }
 
 async function readYouTubeShortsLedger(rootDir: string): Promise<YouTubeShortsLedger> {

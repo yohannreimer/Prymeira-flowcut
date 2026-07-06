@@ -93,4 +93,31 @@ describe("YouTube OAuth routes", () => {
       expect(stored.refreshToken).toBe("refresh-workspace");
     });
   });
+
+  it("uses the configured public app URL for production redirect URIs", async () => {
+    await withTempDir("flowcut-youtube-oauth-public-url-", async (dir) => {
+      vi.stubEnv("YOUTUBE_CLIENT_ID", "client-id");
+      vi.stubEnv("YOUTUBE_CLIENT_SECRET", "client-secret");
+      const app = createApp({
+        workspaceRoot: dir,
+        runJobs: false,
+        publicAppUrl: "https://flowcut.prymeiradigital.com.br",
+        allowedOrigins: ["https://flowcut.prymeiradigital.com.br"],
+        requireTenantAccess: tenantAccess("workspace_abc")
+      });
+
+      const started = await request(app)
+        .post("/api/youtube/oauth/start")
+        .set("Authorization", "Bearer clerk-token")
+        .set("Host", "evil.example")
+        .send({ returnTo: "/projects" })
+        .expect(200);
+
+      const authorizationUrl = new URL(started.body.authorizationUrl);
+
+      expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
+        "https://flowcut.prymeiradigital.com.br/api/youtube/oauth/callback"
+      );
+    });
+  });
 });

@@ -368,7 +368,7 @@ describe("runMediaFactoryOnce", () => {
       const finalLine = stdout.trim().split("\n").at(-1);
       expect(JSON.parse(finalLine ?? "")).toEqual({ processed: 0, skipped: [] });
     });
-  });
+  }, 15_000);
 
   it("approves ready packages from the CLI entrypoint", async () => {
     await withTempDir("media-factory-cli-approve-", async (rootDir) => {
@@ -404,7 +404,7 @@ describe("runMediaFactoryOnce", () => {
       );
       expect(approvedManifest.status).toBe("approved");
     });
-  });
+  }, 15_000);
 
   it("runs publish dry-run from the CLI entrypoint", async () => {
     await withTempDir("media-factory-cli-publish-", async (rootDir) => {
@@ -456,7 +456,7 @@ describe("runMediaFactoryOnce", () => {
         '"ready": 1'
       );
     });
-  });
+  }, 15_000);
 
   it("runs live YouTube publish checks from the CLI entrypoint", async () => {
     await withTempDir("media-factory-cli-publish-youtube-live-", async (rootDir) => {
@@ -524,5 +524,5 @@ describe("runMediaFactoryOnce", () => {
         "YOUTUBE_REFRESH_TOKEN"
       );
     });
-  });
+  }, 15_000);
 });

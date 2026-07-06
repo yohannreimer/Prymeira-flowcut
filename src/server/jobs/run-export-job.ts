@@ -1,4 +1,4 @@
-import { access, mkdir, readFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import type { ExportSettings } from "../../shared/export-settings";
 import { editPlanSchema } from "../../shared/edit-plan";
@@ -38,6 +38,7 @@ export async function runExportJob(
 ) {
   const motionRenderer = deps.renderRemotionMotion ?? renderRemotionMotion;
   let outputPath: string | null = null;
+  let temporaryOutputPath: string | null = null;
   try {
     input.jobs.update(input.jobId, {
       status: "running",
@@ -51,6 +52,7 @@ export async function runExportJob(
       : storedPlan;
     await mkdir(input.workspace.renders, { recursive: true });
     outputPath = path.join(input.workspace.renders, normalizeOutputFileName(input.settings.fileName));
+    temporaryOutputPath = getTemporaryExportPath(outputPath, input.jobId);
     if (input.settings.renderMode === "fast_cuts") {
       input.jobs.update(input.jobId, {
         status: "running",
@@ -60,13 +62,15 @@ export async function runExportJob(
         outputPath
       });
       await renderRoughCut(plan, input.workspace, processRunner, {
-        outputFileName: path.basename(outputPath),
+        outputFileName: path.basename(temporaryOutputPath),
         commandLogFileName: `${path.basename(outputPath, path.extname(outputPath))}-command.json`,
         audioCleanup: input.settings.audioCleanup,
         audioDucking: input.settings.audioDucking,
         videoPreset: input.settings.quality === "maxima" ? "slow" : "veryfast",
         videoCrf: input.settings.quality === "maxima" ? "12" : "18"
       });
+      await rename(temporaryOutputPath, outputPath);
+      temporaryOutputPath = null;
 
       input.jobs.update(input.jobId, {
         status: "passed",
@@ -120,7 +124,7 @@ export async function runExportJob(
 
     const result = await processRunner(
       getConfig().ffmpegPath,
-      buildExportArgs(sourcePath, outputPath, { ...input.settings, audioCleanup: false }, plan.source, captionOverlays, getRenderedDurationSec(plan)),
+      buildExportArgs(sourcePath, temporaryOutputPath, { ...input.settings, audioCleanup: false }, plan.source, captionOverlays, getRenderedDurationSec(plan)),
       {
         timeoutMs: EXPORT_TIMEOUT_MS
       }
@@ -128,6 +132,8 @@ export async function runExportJob(
     if (result.exitCode !== 0) {
       throw new Error(result.stderr || result.stdout || "FFmpeg export failed");
     }
+    await rename(temporaryOutputPath, outputPath);
+    temporaryOutputPath = null;
 
     input.jobs.update(input.jobId, {
       status: "passed",
@@ -137,6 +143,9 @@ export async function runExportJob(
       planPath: input.workspace.planPath
     });
   } catch (error) {
+    if (temporaryOutputPath) {
+      await rm(temporaryOutputPath, { force: true }).catch(() => undefined);
+    }
     const message = error instanceof Error ? error.message : "Unknown export error";
     input.jobs.update(input.jobId, {
       status: "failed",
@@ -147,6 +156,12 @@ export async function runExportJob(
       error: message
     });
   }
+}
+
+function getTemporaryExportPath(outputPath: string, jobId: string) {
+  const extension = path.extname(outputPath) || ".mp4";
+  const baseName = path.basename(outputPath, extension);
+  return path.join(path.dirname(outputPath), `.${baseName}.${jobId}.tmp${extension}`);
 }
 
 function buildExportArgs(

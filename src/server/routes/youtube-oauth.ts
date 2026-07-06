@@ -27,6 +27,7 @@ type StoredOAuthState = {
 export function createYouTubeOAuthRouter(options: {
   workspaceRoot: string;
   requireTenantAccess?: (authorization: string | undefined) => Promise<PrymeiraTenantContext>;
+  publicAppUrl?: string | null;
   fetch?: FetchLike;
 }) {
   const router = express.Router();
@@ -50,7 +51,7 @@ export function createYouTubeOAuthRouter(options: {
       }
 
       const state = randomBytes(32).toString("base64url");
-      const redirectUri = `${resolveRequestOrigin(req)}/api/youtube/oauth/callback`;
+      const redirectUri = `${resolveRequestOrigin(req, options.publicAppUrl)}/api/youtube/oauth/callback`;
       const returnTo = normalizeReturnTo(bodyResult.data.returnTo);
       await writeOAuthState(options.workspaceRoot, state, {
         workspaceId: tenant?.workspaceId ?? null,
@@ -190,7 +191,11 @@ function getOAuthStatePath(workspaceRoot: string, state: string): string {
   return path.join(workspaceRoot, ".oauth", "youtube", `${sanitizeObjectKeyPart(state, "state")}.json`);
 }
 
-function resolveRequestOrigin(req: express.Request): string {
+function resolveRequestOrigin(req: express.Request, publicAppUrl?: string | null): string {
+  if (publicAppUrl) {
+    return publicAppUrl.replace(/\/+$/, "");
+  }
+
   const origin = req.get("origin")?.trim();
   if (origin) return origin.replace(/\/+$/, "");
   const host = req.get("host") ?? "localhost:4317";

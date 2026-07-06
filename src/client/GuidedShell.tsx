@@ -12,6 +12,7 @@ import { Transcription } from "./steps/Transcription";
 import { YouTubePackage } from "./steps/YouTubePackage";
 import { Publish } from "./steps/Publish";
 import type { FlowcutStep } from "./oauth-return";
+import type { VerticalPackageSummary } from "./api";
 
 function isActiveJob(job: ProjectJob | null): boolean {
   return job !== null && ["queued", "running"].includes(job.status);
@@ -46,10 +47,13 @@ export function buildSidebarSteps(
   hasCaptions: boolean,
   isCaptionJobRunning: boolean,
   hasPackage: boolean,
-  isPackageRunning: boolean
+  isPackageRunning: boolean,
+  flowMode: "horizontal" | "vertical" = "horizontal"
 ): SidebarStep[] {
   const hasSomething = Boolean(job || isUploading);
   const captionCount = editPlan?.captions.length ?? 0;
+  const isVertical = flowMode === "vertical";
+  const downstreamReady = isVertical ? hasPackage : hasCaptions;
 
   return [
     {
@@ -74,22 +78,24 @@ export function buildSidebarSteps(
     },
     {
       number: 3,
-      label: "Transcrição",
-      sub: isCaptionJobRunning ? "Transcrevendo…"
+      label: isVertical ? "Revisão" : "Transcrição",
+      sub: isVertical ? (hasPackage ? "Cortes prontos" : "Aguardando")
+        : isCaptionJobRunning ? "Transcrevendo…"
         : hasCaptions ? `${captionCount} segmentos`
         : "Aguardando",
       status: !hasCut ? "locked"
+        : isVertical && hasPackage ? "done"
         : isCaptionJobRunning ? "processing"
         : hasCaptions ? "done"
         : "active"
     },
     {
       number: 4,
-      label: "Pacote YT",
+      label: isVertical ? "Shorts/Reels" : "Pacote YT",
       sub: isPackageRunning ? "Gerando…"
         : hasPackage ? "Pronto"
         : "Aguardando",
-      status: !hasCaptions ? "locked"
+      status: !downstreamReady ? "locked"
         : isPackageRunning ? "processing"
         : hasPackage ? "done"
         : "active"
@@ -108,6 +114,7 @@ export type GuidedShellProps = {
   job: ProjectJob | null;
   editPlan: EditPlanSummary | null;
   youtubePackageSummary: YoutubePackageSummary | null;
+  verticalPackageSummary?: VerticalPackageSummary | null;
   selectedGeneratedThumbnailName: string | null;
   isExporting: boolean;
   isDownloadingFinalPackage: boolean;
@@ -139,11 +146,12 @@ export type GuidedShellProps = {
   onStartFinalExport: () => void;
   onDownloadFinalPackage: () => void;
   onPublishYoutube: () => void;
+  onPublishYoutubeShorts?: () => void;
   onConnectYoutube: () => void;
 };
 
 export function GuidedShell({
-  file, job, editPlan, youtubePackageSummary,
+  file, job, editPlan, youtubePackageSummary, verticalPackageSummary = null,
   selectedGeneratedThumbnailName, isExporting, isDownloadingFinalPackage, isPublishingYoutube, youtubePublicationUrl, exportJob,
   isUploading, isCaptioning, captionJob,
   isGeneratingYoutubePackage, youtubePackageJob,
@@ -153,11 +161,13 @@ export function GuidedShell({
   onFileSelected, onStartUpload, onGenerateCaptions,
   onGenerateYoutubePackage, onSelectGeneratedThumbnail,
   onPublicationTitleChange, onPublicationDescriptionChange,
-  onPublicationVisibilityChange, onStartFinalExport, onDownloadFinalPackage, onPublishYoutube, onConnectYoutube
+  onPublicationVisibilityChange, onStartFinalExport, onDownloadFinalPackage, onPublishYoutube, onPublishYoutubeShorts, onConnectYoutube
 }: GuidedShellProps) {
-  const hasCut = Boolean(job?.outputUrl);
+  const isVerticalFlow = Boolean(editPlan && editPlan.source.height > editPlan.source.width);
+  const hasVerticalPackage = verticalPackageSummary?.status === "ready" && verticalPackageSummary.clips.length > 0;
+  const hasCut = Boolean(job?.outputUrl) || hasVerticalPackage;
   const hasCaptions = Boolean(editPlan?.captions.length);
-  const hasPackage = youtubePackageSummary?.status === "ready";
+  const hasPackage = isVerticalFlow ? hasVerticalPackage : youtubePackageSummary?.status === "ready";
   const isCutRunning = isActiveJob(job);
   const isCaptionJobRunning = isActiveJob(captionJob);
   const isPackageRunning = isActiveJob(youtubePackageJob);
@@ -209,7 +219,8 @@ export function GuidedShell({
     file, job, isUploading,
     hasCut, isCutRunning, editPlan,
     hasCaptions, isCaptionJobRunning,
-    hasPackage, isPackageRunning
+    hasPackage, isPackageRunning,
+    isVerticalFlow ? "vertical" : "horizontal"
   );
 
   // Footer CTA: triggers actions on steps 1 and 5; steps 2–4 use in-content CTAs
@@ -288,7 +299,13 @@ export function GuidedShell({
         />
       )}
       {currentStep === 2 && (
-        <AiCut job={job} editPlan={editPlan} isUploading={isUploading} onNext={() => setViewStep(3)} />
+        <AiCut
+          job={job}
+          editPlan={editPlan}
+          verticalPackageSummary={verticalPackageSummary}
+          isUploading={isUploading}
+          onNext={() => setViewStep(isVerticalFlow ? 5 : 3)}
+        />
       )}
       {currentStep === 3 && (
         <Transcription
@@ -318,6 +335,7 @@ export function GuidedShell({
       {currentStep === 5 && (
         <Publish
           youtubePackageSummary={youtubePackageSummary}
+          verticalPackageSummary={verticalPackageSummary}
           editPlan={editPlan}
           exportJob={exportJob}
           isExporting={isExporting}
@@ -330,6 +348,7 @@ export function GuidedShell({
           onStartFinalExport={onStartFinalExport}
           onDownloadFinalPackage={onDownloadFinalPackage}
           onPublishYoutube={onPublishYoutube}
+          onPublishYoutubeShorts={onPublishYoutubeShorts}
           onConnectYoutube={onConnectYoutube}
         />
       )}

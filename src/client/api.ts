@@ -20,10 +20,7 @@ export type ProjectJob = {
   status: "queued" | "running" | "passed" | "warning" | "failed";
   stage: string;
   message: string;
-  sourcePath: string;
-  outputPath: string | null;
   outputUrl: string | null;
-  planPath: string | null;
   warnings: string[];
   error: string | null;
   createdAt: string;
@@ -53,6 +50,29 @@ export type YoutubePackageSummary = {
     name: string;
     url: string;
   }>;
+};
+
+export type VerticalPackageSummary = {
+  projectId: string;
+  taskId: string;
+  status: "missing" | "ready" | "failed";
+  clips: Array<{
+    id: string;
+    rank: number;
+    title: string;
+    startSec?: number | null;
+    endSec?: number | null;
+    durationSec?: number | null;
+    score?: number | null;
+    videoPath?: string;
+    clipUrl: string;
+    payloads?: {
+      youtubeShorts: string;
+      instagram: string;
+      tiktok: string;
+    };
+  }>;
+  warnings: string[];
 };
 
 export type EditPlanSummary = {
@@ -133,7 +153,13 @@ export async function uploadVideo(
     form.append("cutPreset", options.cutPresetId);
   }
   if (options.directUploadEnabled) {
-    return uploadVideoDirect(file, options.cutPresetId);
+    try {
+      return await uploadVideoDirect(file, options.cutPresetId);
+    } catch (error) {
+      if (!(error instanceof DirectStorageUploadError)) {
+        throw error;
+      }
+    }
   }
   return uploadVideoWithXhr(form);
 }
@@ -254,6 +280,18 @@ export async function fetchYoutubePackageSummary(
   return data.summary;
 }
 
+export async function fetchVerticalPackageSummary(
+  projectId: string,
+  options: FetchOptions = {}
+): Promise<VerticalPackageSummary> {
+  const response = await request(`/api/projects/${encodeURIComponent(projectId)}/vertical-package/summary`, {
+    signal: options.signal
+  });
+  if (!response.ok) throw new Error(await readErrorMessage(response));
+  const data = await response.json();
+  return data.summary;
+}
+
 export type UpdateCaptionInput = {
   text?: string;
   styleId?: CaptionStyleId;
@@ -317,6 +355,17 @@ export type PublishYoutubeVideoResult = {
   url: string;
 };
 
+export type PublishVerticalYoutubeShortsResult = {
+  publications: Array<{
+    clipId: string;
+    rank: number;
+    externalId: string;
+    url: string;
+    status: "published";
+  }>;
+  skipped: string[];
+};
+
 export async function publishYoutubeVideo(
   projectId: string,
   input: PublishYoutubeVideoInput
@@ -329,6 +378,19 @@ export async function publishYoutubeVideo(
   if (!response.ok) throw new Error(await readErrorMessage(response));
   const data = await response.json();
   return data.publication;
+}
+
+export async function publishVerticalYoutubeShorts(
+  projectId: string,
+  input: Pick<PublishYoutubeVideoInput, "privacyStatus">
+): Promise<PublishVerticalYoutubeShortsResult> {
+  const response = await request(`/api/projects/${encodeURIComponent(projectId)}/vertical-package/youtube-shorts-publish`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new Error(await readErrorMessage(response));
+  return response.json();
 }
 
 export async function downloadFinalPackage(
@@ -383,7 +445,7 @@ async function request(input: RequestInfo | URL, init: RequestInit = {}) {
       throw error;
     }
     throw new Error(
-      "Nao consegui conectar na API local em localhost:4317. Confere se o servidor ainda esta rodando e tenta de novo."
+      "Nao consegui conectar na API local. Confere se o servidor ainda esta rodando e tenta de novo."
     );
   }
 }
@@ -474,16 +536,23 @@ function putFileToSignedUrl(uploadUrl: string, file: File, contentType: string):
         resolve();
         return;
       }
-      reject(new Error(xhr.responseText || `Falha ao enviar arquivo para o R2 (${xhr.status}).`));
+      reject(new DirectStorageUploadError(xhr.responseText || `Falha ao enviar arquivo para o R2 (${xhr.status}).`));
     };
     xhr.onerror = () => {
-      reject(new Error("Upload para o R2 foi interrompido. Verifique a conexao e tente novamente."));
+      reject(new DirectStorageUploadError("Upload para o R2 foi interrompido. Verifique a conexao e tente novamente."));
     };
     xhr.ontimeout = () => {
-      reject(new Error("Upload para o R2 demorou demais e foi interrompido."));
+      reject(new DirectStorageUploadError("Upload para o R2 demorou demais e foi interrompido."));
     };
     xhr.send(file);
   });
+}
+
+class DirectStorageUploadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DirectStorageUploadError";
+  }
 }
 
 function mergeRequestHeaders(headersInit: HeadersInit | undefined, token: string | null): Record<string, string> {

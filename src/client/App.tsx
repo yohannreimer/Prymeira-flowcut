@@ -17,6 +17,7 @@ import {
   fetchEditPlan,
   fetchJob,
   fetchPublishReadiness,
+  fetchVerticalPackageSummary,
   fetchYoutubePackageSummary,
   fetchUploadConfig,
   deleteProject,
@@ -26,6 +27,7 @@ import {
   generateCaptions,
   generateYoutubePackage,
   listProjects,
+  publishVerticalYoutubeShorts,
   publishYoutubeVideo,
   rerenderProject,
   exportProject,
@@ -33,6 +35,7 @@ import {
   type EditPlanSummary,
   type ProjectJob,
   type UploadConfig,
+  type VerticalPackageSummary,
   type YoutubePackageSummary,
   updateCaption,
   updateCaptionSettings,
@@ -125,6 +128,7 @@ export function App() {
   const [captionJob, setCaptionJob] = useState<ProjectJob | null>(null);
   const [youtubePackageJob, setYoutubePackageJob] = useState<ProjectJob | null>(null);
   const [youtubePackageSummary, setYoutubePackageSummary] = useState<YoutubePackageSummary | null>(null);
+  const [verticalPackageSummary, setVerticalPackageSummary] = useState<VerticalPackageSummary | null>(null);
   const [selectedPackageAssetName, setSelectedPackageAssetName] = useState<string | null>(null);
   const [selectedGeneratedThumbnailName, setSelectedGeneratedThumbnailName] = useState<string | null>(null);
   const [isPublicationReviewOpen, setIsPublicationReviewOpen] = useState(false);
@@ -342,6 +346,17 @@ export function App() {
   }, [editPlan?.captions.length, job?.projectId, youtubePackageJob?.status, youtubePackageJob?.updatedAt]);
 
   useEffect(() => {
+    const projectId = job?.projectId;
+    const isVertical = Boolean(editPlan && editPlan.source.height > editPlan.source.width);
+    if (!projectId || !isVertical) {
+      setVerticalPackageSummary(null);
+      return;
+    }
+    if (!job || !["passed", "warning"].includes(job.status)) return;
+    void refreshVerticalPackageSummary(projectId);
+  }, [editPlan?.source.height, editPlan?.source.width, job?.projectId, job?.status, job?.updatedAt]);
+
+  useEffect(() => {
     if (!job || !["passed", "warning"].includes(job.status)) return;
     setIsCaptioning(false);
     setIsPlanningMotion(false);
@@ -398,6 +413,7 @@ export function App() {
     setCaptionJob(null);
     setYoutubePackageJob(null);
     setYoutubePackageSummary(null);
+    setVerticalPackageSummary(null);
     setSelectedPackageAssetName(null);
     setSelectedGeneratedThumbnailName(null);
     setIsPublicationReviewOpen(false);
@@ -568,6 +584,18 @@ export function App() {
     }
   }
 
+  async function refreshVerticalPackageSummary(projectId = job?.projectId) {
+    if (!projectId) return;
+    try {
+      const summary = await fetchVerticalPackageSummary(projectId);
+      if (activeProjectIdRef.current && activeProjectIdRef.current !== projectId) return;
+      setVerticalPackageSummary(summary);
+    } catch (err) {
+      const detail = err instanceof Error ? `: ${err.message}` : "";
+      setError(`Falha ao carregar cortes verticais${detail}`);
+    }
+  }
+
   async function onDeleteProject(project: ProjectLibraryItem) {
     const confirmed = window.confirm(`Apagar o projeto "${project.name}"? Essa ação remove os arquivos locais desse projeto.`);
     if (!confirmed) return;
@@ -587,6 +615,7 @@ export function App() {
         setCaptionJob(null);
         setYoutubePackageJob(null);
         setYoutubePackageSummary(null);
+        setVerticalPackageSummary(null);
         setSelectedPackageAssetName(null);
         setSelectedGeneratedThumbnailName(null);
         setIsPublicationReviewOpen(false);
@@ -623,6 +652,7 @@ export function App() {
       setCaptionJob(null);
       setYoutubePackageJob(null);
       setYoutubePackageSummary(null);
+      setVerticalPackageSummary(null);
       setSelectedPackageAssetName(null);
       setSelectedGeneratedThumbnailName(null);
       setIsPublicationReviewOpen(false);
@@ -642,18 +672,16 @@ export function App() {
       setJob({
         id: `restored_${plan.projectId}`,
         projectId: plan.projectId,
-        status: "passed",
-        stage: "complete",
-        message: "Rough cut draft passed basic QA",
-        sourcePath: "",
-        outputPath: "",
-        outputUrl: project.outputUrl ?? `/media/${encodeURIComponent(plan.projectId)}/rough-cut.mp4`,
-        planPath: "",
+        status: project.status === "failed" ? "failed" : "passed",
+        stage: project.status === "failed" ? "failed" : "complete",
+        message: project.status === "failed" ? "Processamento interrompido" : "Rough cut draft passed basic QA",
+        outputUrl: project.status === "failed" ? null : project.outputUrl ?? `/media/${encodeURIComponent(plan.projectId)}/rough-cut.mp4`,
         warnings: [],
-        error: null,
+        error: project.error,
         createdAt: now,
         updatedAt: now
       });
+      activeProjectIdRef.current = plan.projectId;
       if (project.finalExportUrl) {
         setExportJob({
           id: `restored_export_${plan.projectId}`,
@@ -661,15 +689,15 @@ export function App() {
           status: "passed",
           stage: "complete",
           message: "Export is ready",
-          sourcePath: "",
-          outputPath: "",
           outputUrl: project.finalExportUrl,
-          planPath: "",
           warnings: [],
           error: null,
           createdAt: now,
           updatedAt: now
         });
+      }
+      if (plan.source.height > plan.source.width) {
+        void refreshVerticalPackageSummary(project.id);
       }
       void refreshYoutubePackageSummary(project.id);
       setActiveWorkspaceTab("review");
@@ -775,6 +803,31 @@ export function App() {
       setYoutubePublicationUrl(publication.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao publicar no YouTube");
+    } finally {
+      setIsPublishingYoutube(false);
+    }
+  }
+
+  async function onPublishYoutubeShorts() {
+    if (!job) return;
+    if (!verticalPackageSummary?.clips.length) {
+      setError("Gere os cortes verticais antes de publicar no YouTube Shorts.");
+      return;
+    }
+    setError(null);
+    setIsPublishingYoutube(true);
+    try {
+      const result = await publishVerticalYoutubeShorts(job.projectId, {
+        privacyStatus: publicationVisibility
+      });
+      const lastPublication = result.publications[result.publications.length - 1] ?? null;
+      if (lastPublication) {
+        setYoutubePublicationUrl(lastPublication.url);
+      } else {
+        setError("Nenhum clip novo para publicar. Os Shorts deste projeto ja estavam publicados.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao publicar Shorts no YouTube");
     } finally {
       setIsPublishingYoutube(false);
     }
@@ -1036,6 +1089,7 @@ export function App() {
         job={job}
         editPlan={editPlan}
         youtubePackageSummary={youtubePackageSummary}
+        verticalPackageSummary={verticalPackageSummary}
         selectedGeneratedThumbnailName={selectedGeneratedThumbnailName}
         isExporting={isExporting}
         isDownloadingFinalPackage={isDownloadingFinalPackage}
@@ -1067,6 +1121,7 @@ export function App() {
         onStartFinalExport={() => void onExport()}
         onDownloadFinalPackage={() => void onDownloadFinalPackage()}
         onPublishYoutube={() => void onPublishYoutube()}
+        onPublishYoutubeShorts={() => void onPublishYoutubeShorts()}
         onConnectYoutube={() => void onConnectYoutube()}
       />
 
@@ -1952,7 +2007,9 @@ function translateProjectStatus(status: ProjectLibraryItem["status"]) {
     planned: "planejado",
     captioned: "legendado",
     music: "com música",
-    rendered: "renderizado"
+    rendered: "renderizado",
+    processing: "processando",
+    failed: "falhou"
   };
   return labels[status];
 }
@@ -2671,6 +2728,7 @@ function ProjectLibraryPanel({ projects, activeProjectId, isLoading, onRefresh, 
             <button type="button" className="project-open-button" onClick={() => onOpen(project)}>
               <span>{project.name}</span>
               <small>{project.durationSec ? formatSeconds(project.durationSec) : "sem plano"} · {translateProjectStatus(project.status)}</small>
+              {project.error ? <small>{project.error}</small> : null}
               {project.versions.length ? <small>{project.versions.length} versões salvas</small> : null}
             </button>
             <button type="button" className="danger-button" onClick={() => onDelete(project)}>Apagar</button>
@@ -3166,8 +3224,8 @@ function FinalizePanel({
               <span style={{ width: `${packageProgress}%` }} />
             </div>
             <strong>{translateJobMessage(youtubePackageJob.message)}</strong>
-            {youtubePackageJob.status === "passed" && youtubePackageJob.outputPath ? (
-              <p className="package-output-path">{youtubePackageJob.outputPath}</p>
+            {youtubePackageJob.status === "passed" && youtubePackageJob.outputUrl ? (
+              <p className="package-output-path">{youtubePackageJob.outputUrl}</p>
             ) : null}
             {youtubePackageJob.status === "failed" && youtubePackageJob.error ? (
               <p className="file-meta">{youtubePackageJob.error}</p>

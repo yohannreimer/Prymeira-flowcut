@@ -27,6 +27,13 @@ import {
   type startProjectRetentionCleanup
 } from "./project-retention";
 import { createR2ProjectDirectUploadStorage } from "./project-direct-upload-storage";
+import {
+  createOriginGuard,
+  createRateLimitMiddleware,
+  sanitizeInternalErrorMessage,
+  setSecurityHeaders,
+  type RateLimitOptions
+} from "./security";
 
 const PROJECT_ID_PATTERN = /^project_[A-Za-z0-9_-]+$/;
 
@@ -56,20 +63,31 @@ export type CreateAppOptions = {
   directUploadStorage?: ProjectDirectUploadStorage;
   mediaFactorySaas?: MediaFactorySaasOptions;
   fetch?: typeof fetch;
+  allowedOrigins?: string[];
+  publicAppUrl?: string | null;
+  jsonBodyLimitBytes?: number;
+  rateLimit?: RateLimitOptions | false;
 };
 
 export function createApp(options: CreateAppOptions = {}) {
   const config = getConfig();
-  if (!options.requireTenantAccess && !config.prymeiraAccountApiUrl && (config.nodeEnv ?? "development") === "production") {
+  const localMode = config.localMode;
+  if (!localMode && !options.requireTenantAccess && !config.prymeiraAccountApiUrl && (config.nodeEnv ?? "development") === "production") {
     throw new Error("PRYMEIRA_ACCOUNT_API_URL is required in production.");
   }
   const workspaceRoot = options.workspaceRoot ?? config.workspaceRoot;
   const uploadFileSizeLimitBytes = options.uploadFileSizeLimitBytes ?? config.uploadFileSizeLimitBytes;
   const projectRetentionMinutes = options.projectRetentionMinutes ?? config.projectRetentionMinutes;
+  const allowedOrigins = options.allowedOrigins ?? config.allowedOrigins;
+  const publicAppUrl = options.publicAppUrl ?? config.publicAppUrl;
+  const jsonBodyLimitBytes = options.jsonBodyLimitBytes ?? config.jsonBodyLimitBytes;
+  const rateLimit = options.rateLimit === undefined
+    ? { windowMs: 60_000, max: 120 }
+    : options.rateLimit;
   const jobs = options.jobs ?? createJobStore();
   const startProjectRetentionCleanup = options.startProjectRetentionCleanup ?? defaultStartProjectRetentionCleanup;
-  const directUploadStorage = options.directUploadStorage ?? createR2ProjectDirectUploadStorage() ?? undefined;
-  const requireTenantAccess = options.requireTenantAccess ?? (config.prymeiraAccountApiUrl
+  const directUploadStorage = options.directUploadStorage ?? (localMode ? null : createR2ProjectDirectUploadStorage()) ?? undefined;
+  const requireTenantAccess = options.requireTenantAccess ?? (!localMode && config.prymeiraAccountApiUrl
     ? createPrymeiraTenantAccess({
       accountApiUrl: config.prymeiraAccountApiUrl,
       productKey: config.prymeiraProductKey
@@ -77,7 +95,13 @@ export function createApp(options: CreateAppOptions = {}) {
     : undefined);
   const app = express();
 
-  app.use(express.json());
+  app.set("trust proxy", 1);
+  app.use(setSecurityHeaders);
+  app.use(createOriginGuard(allowedOrigins));
+  if (rateLimit) {
+    app.use(createRateLimitMiddleware(rateLimit));
+  }
+  app.use(express.json({ limit: jsonBodyLimitBytes }));
   if (options.runProjectRetentionCleanup ?? true) {
     startProjectRetentionCleanup({
       workspaceRoot,
@@ -143,6 +167,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use("/api/youtube/oauth", createYouTubeOAuthRouter({
     workspaceRoot,
     requireTenantAccess,
+    publicAppUrl,
     fetch: options.fetch
   }));
   app.use("/api/projects", createProjectRouter({
@@ -190,7 +215,7 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = sanitizeInternalErrorMessage(error, config.nodeEnv);
     res.status(500).json({ error: message });
   });
 

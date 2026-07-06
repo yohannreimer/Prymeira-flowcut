@@ -14,12 +14,13 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "build": "rm -rf dist && esbuild src/index.ts --bundle --platform=neutral --format=esm --outfile=dist/index.js --packages=external && esbuild src/index.ts --bundle --platform=neutral --format=cjs --outfile=dist/index.cjs --packages=external && tsc -p tsconfig.json --emitDeclarationOnly",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
-    "tsup": "^8.3.5"
+    "esbuild": "^0.25.12",
+    "typescript": "^5.9.3"
   }
 }

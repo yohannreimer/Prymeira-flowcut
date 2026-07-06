@@ -1,11 +1,12 @@
-import { Check, Film } from "lucide-react";
-import type { EditPlanSummary, ProjectJob } from "../api";
+import { Check, Download, Film } from "lucide-react";
+import type { EditPlanSummary, ProjectJob, VerticalPackageSummary } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
 import { SkeletonLoader } from "../components/SkeletonLoader";
 
 type AiCutProps = {
   job: ProjectJob | null;
   editPlan: EditPlanSummary | null;
+  verticalPackageSummary?: VerticalPackageSummary | null;
   isUploading: boolean;
   onNext: () => void;
 };
@@ -16,9 +17,11 @@ function formatDuration(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function AiCut({ job, editPlan, isUploading, onNext }: AiCutProps) {
+export function AiCut({ job, editPlan, verticalPackageSummary = null, isUploading, onNext }: AiCutProps) {
   const isRunning = isUploading || (job !== null && ["queued", "running"].includes(job.status));
-  const hasCut = Boolean(job?.outputUrl);
+  const verticalClips = verticalPackageSummary?.status === "ready" ? verticalPackageSummary.clips : [];
+  const hasVerticalClips = verticalClips.length > 0;
+  const hasCut = Boolean(job?.outputUrl) || hasVerticalClips;
   const isFailed = job?.status === "failed";
 
   const segments = editPlan?.segments ?? [];
@@ -32,10 +35,11 @@ export function AiCut({ job, editPlan, isUploading, onNext }: AiCutProps) {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 700, color: "#e8e4de", letterSpacing: "-0.3px" }}>
-            {isRunning ? "Gerando corte IA" : hasCut ? "Corte gerado" : "Corte com IA"}
+            {isRunning ? "Gerando corte IA" : hasVerticalClips ? "Cortes verticais gerados" : hasCut ? "Corte gerado" : "Corte com IA"}
           </div>
           <div style={{ fontSize: 12, color: "#484845", marginTop: 3 }}>
             {isRunning ? (job?.message ?? "Detectando silêncios e segmentos · ~2 min") :
+             hasVerticalClips ? `${verticalClips.length} cortes SupoClip prontos` :
              hasCut ? `${segments.length} segmentos mantidos` :
              "Aguardando vídeo"}
           </div>
@@ -71,8 +75,100 @@ export function AiCut({ job, editPlan, isUploading, onNext }: AiCutProps) {
         </div>
       )}
 
+      {/* Done state: vertical SupoClip clips */}
+      {hasVerticalClips && !isRunning && (
+        <div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+            {verticalClips.map((clip) => (
+              <div
+                key={clip.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "92px minmax(0, 1fr)",
+                  gap: 10,
+                  padding: 10,
+                  borderRadius: 8,
+                  background: "var(--shell-surface)",
+                  border: "1px solid var(--shell-border-soft)"
+                }}
+              >
+                <div style={{ background: "#000", borderRadius: 7, overflow: "hidden", aspectRatio: "9 / 16" }}>
+                  <video src={clip.clipUrl} controls preload="metadata" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                </div>
+                <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <div style={{ fontSize: 10, color: "var(--shell-gold)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                      Rank {String(clip.rank).padStart(2, "0")}
+                    </div>
+                    {typeof clip.score === "number" ? (
+                      <div style={{ fontSize: 10, color: "#777", fontVariantNumeric: "tabular-nums" }}>
+                        score {Math.round(clip.score)}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#d8d1c7", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                    {clip.title}
+                  </div>
+                  <div style={{ display: "flex", gap: 12, fontSize: 10, color: "#666", fontVariantNumeric: "tabular-nums" }}>
+                    {typeof clip.durationSec === "number" ? <span>{formatDuration(clip.durationSec)}</span> : null}
+                    {typeof clip.startSec === "number" && typeof clip.endSec === "number" ? (
+                      <span>{formatDuration(clip.startSec)}-{formatDuration(clip.endSec)}</span>
+                    ) : null}
+                  </div>
+                  <a
+                    href={clip.clipUrl}
+                    download
+                    style={{
+                      marginTop: "auto",
+                      width: "fit-content",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      padding: "7px 9px",
+                      borderRadius: 6,
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid var(--shell-border-soft)",
+                      color: "#a9a39a",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textDecoration: "none"
+                    }}
+                  >
+                    <Download size={11} /> Baixar clip
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{
+            padding: "12px 16px", borderRadius: 8,
+            background: "rgba(76,175,125,0.07)", border: "1px solid rgba(76,175,125,0.2)",
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#4caf7d", fontWeight: 600 }}>
+              <Check size={13} color="#4caf7d" />
+              Cortes prontos para Shorts e Reels
+            </div>
+            <button
+              type="button"
+              onClick={onNext}
+              style={{
+                padding: "7px 14px", borderRadius: 6,
+                background: "var(--shell-gold)", border: "none",
+                fontSize: 11, fontWeight: 800, color: "#111",
+                cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.5px",
+                whiteSpace: "nowrap"
+              }}
+            >
+              Publicar →
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Done state: video + segments */}
-      {hasCut && editPlan && !isRunning && (
+      {hasCut && !hasVerticalClips && editPlan && !isRunning && (
         <div>
           {/* Video player */}
           <div style={{

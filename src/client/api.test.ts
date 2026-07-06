@@ -6,12 +6,14 @@ import {
   fetchEditPlan,
   fetchJob,
   fetchPublishReadiness,
+  fetchVerticalPackageSummary,
   fetchYoutubePackageSummary,
   fetchUploadConfig,
   generateAIMotion,
   generateCaptions,
   generateYoutubePackage,
   listProjects,
+  publishVerticalYoutubeShorts,
   publishYoutubeVideo,
   rerenderProject,
   touchProjectActivity,
@@ -184,6 +186,82 @@ describe("api client", () => {
     await expect(listProjects()).resolves.toMatchObject([
       { id: "project_123", status: "rendered", outputUrl: "/media/project_123/rough-cut.mp4" }
     ]);
+  });
+
+  it("fetches a vertical SupoClip package summary", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      summary: {
+        projectId: "project_123",
+        taskId: "task-123",
+        status: "ready",
+        clips: [
+          {
+            id: "clip-1",
+            rank: 1,
+            title: "Clip 1",
+            clipUrl: "/api/projects/project_123/vertical-package/clips/rank-01/clip.mp4",
+            payloads: {
+              youtubeShorts: "shorts/rank-01/youtube-shorts-payload.json",
+              instagram: "shorts/rank-01/instagram-reels-payload.json",
+              tiktok: "shorts/rank-01/tiktok-payload.json"
+            }
+          }
+        ],
+        warnings: []
+      }
+    }), {
+      headers: { "content-type": "application/json" }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchVerticalPackageSummary("project_123")).resolves.toMatchObject({
+      projectId: "project_123",
+      status: "ready",
+      clips: [
+        {
+          id: "clip-1",
+          rank: 1,
+          title: "Clip 1"
+        }
+      ]
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/projects/project_123/vertical-package/summary", { signal: undefined });
+  });
+
+  it("publishes generated vertical clips to YouTube Shorts", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      publications: [
+        {
+          clipId: "clip-1",
+          rank: 1,
+          externalId: "yt-short-1",
+          url: "https://www.youtube.com/watch?v=yt-short-1",
+          status: "published"
+        }
+      ],
+      skipped: []
+    }), {
+      headers: { "content-type": "application/json" }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(publishVerticalYoutubeShorts("project_123", { privacyStatus: "public" })).resolves.toEqual({
+      publications: [
+        {
+          clipId: "clip-1",
+          rank: 1,
+          externalId: "yt-short-1",
+          url: "https://www.youtube.com/watch?v=yt-short-1",
+          status: "published"
+        }
+      ],
+      skipped: []
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/projects/project_123/vertical-package/youtube-shorts-publish", expect.objectContaining({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ privacyStatus: "public" })
+    }));
   });
 
   it("requests an accepted export job with export settings", async () => {
@@ -403,6 +481,56 @@ describe("api client", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ cutPreset: "aggressive" })
     }));
+  });
+
+  it("falls back to the local API upload when a direct storage PUT is blocked", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        upload: {
+          id: "upload_123",
+          storageKey: "workspaces/workspace_123/jobs/job_123/source/video.mp4"
+        },
+        uploadUrl: "https://r2.test/signed-put"
+      }), {
+        headers: { "content-type": "application/json" }
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    class DirectUploadFailsXMLHttpRequest extends FakeUploadXMLHttpRequest {
+      override send(body?: BodyInit | null) {
+        this.sentBody = body ?? null;
+        queueMicrotask(() => {
+          if (this.method === "PUT") {
+            this.onerror?.();
+            return;
+          }
+          this.status = FakeUploadXMLHttpRequest.response.status;
+          this.responseText = FakeUploadXMLHttpRequest.response.responseText;
+          this.onload?.();
+        });
+      }
+    }
+
+    FakeUploadXMLHttpRequest.instances = [];
+    vi.stubGlobal("XMLHttpRequest", DirectUploadFailsXMLHttpRequest);
+
+    await expect(uploadVideo(new File(["fake"], "sample.mp4", { type: "video/mp4" }), {
+      cutPresetId: "aggressive",
+      directUploadEnabled: true
+    })).resolves.toMatchObject({
+      projectId: "project_123",
+      job: { id: "job_123" }
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const putRequest = FakeUploadXMLHttpRequest.instances[0]!;
+    expect(putRequest.method).toBe("PUT");
+    expect(putRequest.url).toBe("https://r2.test/signed-put");
+    const apiUploadRequest = FakeUploadXMLHttpRequest.instances[1]!;
+    expect(apiUploadRequest.method).toBe("POST");
+    expect(apiUploadRequest.url).toBe("/api/projects");
+    const form = apiUploadRequest.sentBody as FormData;
+    expect(form.get("cutPreset")).toBe("aggressive");
   });
 
   it("starts AI motion planning", async () => {

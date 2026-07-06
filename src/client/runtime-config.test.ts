@@ -47,6 +47,10 @@ describe("runtime config", () => {
       hostname: "127.0.0.1"
     })).toBe(true);
     expect(isLocalAuthBypassEnabled({
+      viteEnv: { VITE_FLOWCUT_LOCAL_MODE: "true" },
+      hostname: "flowcut.prymeiradigital.com.br"
+    })).toBe(false);
+    expect(isLocalAuthBypassEnabled({
       viteEnv: { DEV: true },
       hostname: "flowcut.prymeiradigital.com.br"
     })).toBe(false);

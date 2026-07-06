@@ -67,10 +67,14 @@ export function isLocalAuthBypassEnabled(input: {
   viteEnv?: Record<string, string | boolean | undefined>;
   hostname?: string;
 } = {}): boolean {
+  const isLocalhost = input.hostname === "localhost" || input.hostname === "127.0.0.1";
+  const explicitLocalMode = input.viteEnv?.VITE_FLOWCUT_LOCAL_MODE === "true";
+  if (explicitLocalMode) return isLocalhost;
+
   const isDev = input.viteEnv?.DEV === true || input.viteEnv?.MODE === "development";
   if (!isDev) return false;
 
-  return input.hostname === "localhost" || input.hostname === "127.0.0.1";
+  return isLocalhost;
 }
 
 export function isBrowserLocalAuthBypassEnabled(): boolean {

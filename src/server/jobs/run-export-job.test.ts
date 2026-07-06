@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createJobStore } from "./job-store";
@@ -130,6 +130,17 @@ async function writeMotionPlan(planPath: string, sourcePath: string, sourceSize 
   }));
 }
 
+function successfulProcessRunner() {
+  return vi.fn().mockImplementation(async (_command: string, args: string[]) => {
+    const outputPath = args.at(-1);
+    if (outputPath) {
+      await mkdir(path.dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, "process output");
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  });
+}
+
 describe("runExportJob", () => {
   it("exports from the rough cut with requested aspect and quality", async () => {
     await withTempDir("ai-editor-export-", async (dir) => {
@@ -142,7 +153,7 @@ describe("runExportJob", () => {
       await writePlan(workspace.planPath, sourcePath);
       const jobs = createJobStore();
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
-      const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const processRunner = successfulProcessRunner();
 
       await runExportJob({
         jobId: job.id,
@@ -172,15 +183,66 @@ describe("runExportJob", () => {
         "-preset",
         "slow",
         "-crf",
-        "18",
-        path.join(workspace.renders, "final-cut.mp4")
+        "18"
       ]));
+      expect(exportArgs.at(-1)).not.toBe(path.join(workspace.renders, "final-cut.mp4"));
+      expect(path.basename(exportArgs.at(-1) ?? "")).toContain(".tmp.");
       expect(exportArgs).not.toContain("-af");
       expect(jobs.get(job.id)).toMatchObject({
         status: "passed",
         stage: "complete",
         message: "Export is ready",
         outputPath: path.join(workspace.renders, "final-cut.mp4")
+      });
+    });
+  });
+
+  it("keeps the final export hidden until ffmpeg finishes successfully", async () => {
+    await withTempDir("ai-editor-export-atomic-", async (dir) => {
+      const workspace = await createProjectWorkspace(dir, "project_1");
+      const sourcePath = path.join(workspace.uploads, "source.mov");
+      const roughCutPath = path.join(workspace.renders, "rough-cut.mp4");
+      const outputPath = path.join(workspace.renders, "youtube-edit.mp4");
+      await mkdir(workspace.renders, { recursive: true });
+      await writeFile(sourcePath, "source");
+      await writeFile(roughCutPath, "rough");
+      await writePlan(workspace.planPath, sourcePath);
+      const jobs = createJobStore();
+      const job = jobs.create({ projectId: workspace.projectId, sourcePath });
+      const processRunner = vi.fn().mockImplementation(async (_command: string, args: string[]) => {
+        const processOutputPath = args.at(-1);
+        if (processOutputPath === roughCutPath) {
+          await writeFile(roughCutPath, "rough");
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }
+
+        await expect(access(outputPath)).rejects.toMatchObject({ code: "ENOENT" });
+        expect(processOutputPath).not.toBe(outputPath);
+        expect(path.basename(processOutputPath ?? "")).toContain(".tmp.");
+        await writeFile(processOutputPath!, "complete mp4");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      });
+
+      await runExportJob({
+        jobId: job.id,
+        workspace,
+        jobs,
+        settings: {
+          renderMode: "full",
+          format: "horizontal",
+          resolution: "1080p",
+          quality: "rapida",
+          fileName: "youtube-edit.mp4",
+          audioCleanup: false,
+          audioDucking: false,
+          sdrMode: "preserve"
+        }
+      }, processRunner);
+
+      await expect(readFile(outputPath, "utf8")).resolves.toBe("complete mp4");
+      expect(jobs.get(job.id)).toMatchObject({
+        status: "passed",
+        outputPath
       });
     });
   });
@@ -196,7 +258,7 @@ describe("runExportJob", () => {
       await writeCaptionedPlan(workspace.planPath, sourcePath);
       const jobs = createJobStore();
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
-      const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const processRunner = successfulProcessRunner();
 
       await runExportJob({
         jobId: job.id,
@@ -235,7 +297,7 @@ describe("runExportJob", () => {
       await writePlan(workspace.planPath, sourcePath);
       const jobs = createJobStore();
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
-      const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const processRunner = successfulProcessRunner();
 
       await runExportJob({
         jobId: job.id,
@@ -273,7 +335,7 @@ describe("runExportJob", () => {
       await writeMotionPlan(workspace.planPath, sourcePath);
       const jobs = createJobStore();
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
-      const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const processRunner = successfulProcessRunner();
       const renderMotion = vi.fn().mockResolvedValue(motionPath);
 
       await runExportJob({
@@ -301,7 +363,9 @@ describe("runExportJob", () => {
         })
       }), processRunner);
       const args = processRunner.mock.calls.at(-1)?.[1] as string[];
-      expect(args).toEqual(expect.arrayContaining(["-i", motionPath, path.join(workspace.renders, "motion.mp4")]));
+      expect(args).toEqual(expect.arrayContaining(["-i", motionPath]));
+      expect(args.at(-1)).not.toBe(path.join(workspace.renders, "motion.mp4"));
+      expect(path.basename(args.at(-1) ?? "")).toContain(".tmp.");
     });
   });
 
@@ -317,7 +381,7 @@ describe("runExportJob", () => {
       await writeMotionPlan(workspace.planPath, sourcePath, { width: 3840, height: 2160 });
       const jobs = createJobStore();
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
-      const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const processRunner = successfulProcessRunner();
       const renderMotion = vi.fn().mockResolvedValue(motionPath);
 
       await runExportJob({
@@ -363,7 +427,7 @@ describe("runExportJob", () => {
         }
       };
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
-      const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const processRunner = successfulProcessRunner();
       const renderMotion = vi.fn().mockImplementation(async (input) => {
         input.onProgress?.({
           renderedFrames: 42,
@@ -416,7 +480,7 @@ describe("runExportJob", () => {
       await writeMotionPlan(workspace.planPath, sourcePath);
       const jobs = createJobStore();
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
-      const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const processRunner = successfulProcessRunner();
       const renderMotion = vi.fn().mockResolvedValue(path.join(workspace.renders, "motion-render.mp4"));
 
       await runExportJob({
@@ -438,7 +502,9 @@ describe("runExportJob", () => {
       expect(renderMotion).not.toHaveBeenCalled();
       expect(processRunner).toHaveBeenCalledTimes(1);
       const args = processRunner.mock.calls[0][1] as string[];
-      expect(args).toEqual(expect.arrayContaining(["-i", sourcePath, "-crf", "18", outputPath]));
+      expect(args).toEqual(expect.arrayContaining(["-i", sourcePath, "-crf", "18"]));
+      expect(args.at(-1)).not.toBe(outputPath);
+      expect(path.basename(args.at(-1) ?? "")).toContain(".tmp.");
       expect(args.join(" ")).not.toContain("overlay=");
       expect(args.join(" ")).not.toContain("scale=");
       expect(jobs.get(job.id)).toMatchObject({
@@ -460,7 +526,7 @@ describe("runExportJob", () => {
       await writePlan(workspace.planPath, sourcePath);
       const jobs = createJobStore();
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
-      const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const processRunner = successfulProcessRunner();
 
       await runExportJob({
         jobId: job.id,
@@ -479,7 +545,9 @@ describe("runExportJob", () => {
       }, processRunner);
 
       const args = processRunner.mock.calls[0][1] as string[];
-      expect(args).toEqual(expect.arrayContaining(["-preset", "slow", "-crf", "12", outputPath]));
+      expect(args).toEqual(expect.arrayContaining(["-preset", "slow", "-crf", "12"]));
+      expect(args.at(-1)).not.toBe(outputPath);
+      expect(path.basename(args.at(-1) ?? "")).toContain(".tmp.");
     });
   });
 
@@ -494,7 +562,7 @@ describe("runExportJob", () => {
       await writePlan(workspace.planPath, sourcePath);
       const jobs = createJobStore();
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
-      const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const processRunner = successfulProcessRunner();
 
       await runExportJob({
         jobId: job.id,
@@ -530,7 +598,7 @@ describe("runExportJob", () => {
       await writeCaptionedPlan(workspace.planPath, sourcePath);
       const jobs = createJobStore();
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
-      const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const processRunner = successfulProcessRunner();
 
       await runExportJob({
         jobId: job.id,
@@ -570,7 +638,7 @@ describe("runExportJob", () => {
       await writeCaptionedPlan(workspace.planPath, sourcePath);
       const jobs = createJobStore();
       const job = jobs.create({ projectId: workspace.projectId, sourcePath });
-      const processRunner = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const processRunner = successfulProcessRunner();
 
       await runExportJob({
         jobId: job.id,
